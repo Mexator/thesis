@@ -2,18 +2,123 @@
 \label{chap:lr}
 \chaptermark{Second Chapter Heading}
 
+This chapter will begin with an overview of concept of persistence in general,
+and in particular, orthogonal persistence in section 1. Then, in section 2,
+it will describe how networking in persistent systems is done currently, and what
+are the requirements for a networking stack in such a system. The last section 
+is dedicated to give a description of Phantom OS, Genode OS framework and 
+current state of porting former to latter.
 
-\Blindtext[2]
+\section{Persistence}
+\subsection{Persistence definitions}
+Every program operates some kind of data. This data can be different in nature,
+and thus has a different lifetimes. This lifetime is a time extent over which 
+data can be used and is commonly called \textit{persistence} 
+\cite{atkinson1983ps}. 
 
-\section{Another Section}
-\Blindtext[1]
-\newpage
-With the widespread of computing systems, information processing, and net working, the practice of replacing paper documentation to electronic documentation has become more and more common. Electronic documentation within the workplace has several advantages over the traditional one, such as being easy to share, copy and edit the document. However, these advantages also present a problem. A malefactor, having access to the system, can easily copy and leak the document, without leaving any trace. Such actions are virtually undetectable in most systems, so, the malefactor goes unpunished. In this thesis, we propose one solution to the problem: digital watermarking. 
+Atkinson et al. \cite{atkinson1995orthogonally,atkinson1983ps} give a 
+classification of application data objects by their persistence, which is
+presented in table \ref{tab:data_lifetimes}. Usually, levels 1-4 are supported
+by programming languages themselves, and support of levels 5-8 relies on some 
+external component, such as database or file system. 
 
-Every electronic document within the protected system is marked with an invisible digital watermark, containing information about the user, accessing this particular document. Therefore, in case the protected company discovers the leaked document, they will be able to identify the machine of the malicious person and time when the document was leaked. This will allow inflicting punishment on the malefactor, recovering the costs of the leak, and potentially preventing future ones. 
+\begin{longtable}{cl}
+\caption[Classification of data objects based on their lifetime]{Classification 
+of data objects based on their lifetime} 
+\label{tab:data_lifetimes} \\
+\hline
+1 & Transient results in expression evaluation \\
+2 & Local variables \\
+3 & Global variables and heap items \\
+4 & Data that lasts a whole execution of a program \\
+5 & Data that lasts for several executions of several programs \\
+6 & Data that lasts for as long as a program is being used \\
+7 & Data that outlives a succession of versions of such a program \\
+8 & Data that outlives versions of the persistent support system \\
+\hline
+\end{longtable}
 
-This description implies several essential properties of the task at hand:
+\subsection{Orthogonal persistence}
+
+Different ways of data interactions, namely using builtin programming language 
+constructs and external tools available via some interfaces, bring an extra
+layer of complexity to programs. To answer this problem, 
+\cite{atkinson1995orthogonally} proposes to use persistent support systems, 
+which act as a mediator between a persistent application and transient 
+environment. The authors also summarize requirements for such a system, saying 
+that such a systems should have use of data not dependent of its persistence.
+They define following principles for such a system:
 \begin{enumerate}
-    \item Watermark must contain all necessary information, but still, be placeable and recognizable even on smaller images. The produced watermark must be compact but have the possibility to store enough information. 
-    \item To prevent easy tampering, the watermark must be invisible to the naked eye (and, preferably, to basic image parsing tools). If malefactor does not know about the existence of watermark, they might not even try to remove it and disable it. 
+    \item The Principle of Persistence Independence. The form of a program is 
+    independent of the longevity of the data which it manipulates. Programs look 
+    the same whether they manipulate short-term or long-term data.
+    \item The Principle of Data Type Orthogonality. All data objects should be 
+    allowed the full range of persistence, irrespective of their type. There are 
+    no special cases where objects are not allowed to be long-lived or are not 
+    allowed to be transient.
+    \item  The Principle of Persistence Identification. The choice of how to 
+    identify and provide persistent objects is orthogonal to the universe of 
+    discourse of the system. The mechanism for identifying persistent objects is 
+    not related to the type system.
 \end{enumerate}
+
+Two popular approaches exist to build such a system. 
+
+One is to integrate interactions with databases or file systems into an existing 
+programming languages, which is what most ORM libraries do 
+\cite{аннин2018краткий,bayer2010sqlalchemy}. However, this approach is not 
+really transparent for a programmer, and may cause errors. 
+
+Another approach is to build so-called \textit{persistent worlds} 
+\cite{atkinson1995orthogonally}. These worlds are usually done in form of 
+operating systems, which provide necessary mechanisms to make state of   
+userspace processes managed by it persistent across systems restarts. 
+Examples of such systems are KeyKOS \cite{bomberger1992keykos}, Grasshopper OS
+\cite{dearle1994grasshopper}, and Phantom OS.
+
+A question may arise at this point, isn't it possible to take an existing 
+popular operating system, and run it with nonvolatile memory as a main memory?
+The answer is no, because this raises two problems: problem of dealing with 
+changed peripheral device states during restarts \cite{berthou2018peripheral}, 
+and logical problems with code execution \cite{ransford2014nonvolatile}. That is
+why the question of building a persistent support system that will satisfy 
+orthogonal properties is not trivial. 
+
+\section{Networking in persistent systems}
+\dots This part is not done yet, however an outline was done for its contents
+\begin{enumerate}
+    \item Definition of problems with currently supported network stack. \\
+    Example of problems:
+    \begin{itemize}
+        \item Lost connections and strategies to restore. 
+        \item How stateful protocols can be changed? 
+        \item Can we use some intermediary message broker to manage communication?
+    \end{itemize} 
+    \item Define requirements for protocol that are suitable for PSs
+    \item Say what will be focus of work
+\end{enumerate} 
+
+\section{Phantom OS and Genode OS framework}
+\subsection{Phantom OS}
+Phantom OS is a general-purpose operating system, developed in 2009-2011. This 
+is an orthogonally persistent operating system, in which persistence is brought
+using snapshotting of virtual memory. The operating system consists of kernel 
+and virtual machine, which executes all userspace programs written in Phantom 
+bytecode. Managed code execution is persistent, whereas kernel state is 
+transient, which means that it is not kept between reboots. It is assumed that 
+it can be restored. 
+Phantom is an experimental system, in a sense that it is developed as a 
+proof-of-concept and is not ready for production use.
+
+Phantom OS currently supports only i386 ISA, and it has all drivers builtin 
+inside a kernel. It is problematic, because to support wide range of hardware
+OS needs drivers, which is often delivered by third-party developers. But in
+case when drivers are embedded in kernel error in driver can crash whole system.
+
+These are two reasons why it is desirable to replace Phantom kernel with a 
+microkernel, which is now in progress by my colleagues. My colleagues from
+Innopolis University are now working on porting Phantom OS to Genode OS 
+framework. I am going to use this port as soon as it will be ready.
+
+\subsection{Genode OS framework} 
+\dots To be done
