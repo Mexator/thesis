@@ -2,39 +2,39 @@
 \label{chap:lr}
 \chaptermark{Second Chapter Heading}
 
-This chapter will begin with an overview of concept of persistence in general,
-and in particular, orthogonal persistence in section 1. Then, in section 2,
-it will describe how networking in persistent systems is done currently, and what
-are the requirements for a networking stack in such a system. The last section 
-is dedicated to give a description of Phantom OS, Genode OS framework and 
-current state of porting former to latter.
+This chapter will begin with an overview of persistence concept in general,
+and in particular, orthogonal persistence in Section 1. Then, Section 2 will
+discuss how networking in persistent systems was implemented previously, and
+what are the requirements for a networking stack in such systems. The last
+section describes Phantom OS, Genode OS framework and current state of
+porting former to latter.
 
 \section{Persistence}
 \subsection{Persistence definitions}
-Every program operates some kind of data. This data can be different in nature,
-and thus has a different lifetimes. This lifetime is a time extent over which 
-data can be used and is commonly called \textit{persistence} 
+Every program operates data. These data can be different in nature,
+and thus have different lifetimes. The lifetime of a data object is a time extent
+over which it can be used and is commonly called \textit{persistence} 
 \cite{atkinson1983ps}. 
 
-Atkinson et al. \cite{atkinson1995orthogonally,atkinson1983ps} give a 
+Atkinson \textit{et al.} \cite{atkinson1995orthogonally,atkinson1983ps} give a 
 classification of application data objects by their persistence, which is
-presented in table \ref{tab:data_lifetimes}. Usually, levels 1-4 are supported
-by programming languages themselves, and support of levels 5-8 relies on some 
-external component, such as database or file system. 
+presented in Table \ref{tab:data_lifetimes}. Usually, support of levels 1-4
+relies on programming languages themselves, and for levels 5-8 designers of
+persistent applications rely on some external component, such as database or 
+file system. 
 
 \begin{longtable}{cl}
 \caption[Classification of data objects based on their lifetime]{Classification 
 of data objects based on their lifetime} 
 \label{tab:data_lifetimes} \\
 \hline
-1 & Transient results in expression evaluation \\
-2 & Local variables \\
-3 & Global variables and heap items \\
-4 & Data that lasts a whole execution of a program \\
-5 & Data that lasts for several executions of several programs \\
-6 & Data that lasts for as long as a program is being used \\
-7 & Data that outlives a succession of versions of such a program \\
-8 & Data that outlives versions of the persistent support system \\
+1. & Transient results in expression evaluation \\
+2. & Local variables inside functions and code blocks \\
+3. & Global variables and heap items \\
+4. & Data that exists throughout a whole execution of a program \\
+5. & Data that lasts for several executions of program \\
+6. & Data that lasts for as long as a program is being used \\
+7. & Data that outlives a program \\
 \hline
 \end{longtable}
 
@@ -45,54 +45,65 @@ constructs and external tools available via some interfaces, bring an extra
 layer of complexity to programs. To answer this problem, 
 \cite{atkinson1995orthogonally} proposes to use persistent support systems, 
 which act as a mediator between a persistent application and transient 
-environment. The authors also summarize requirements for such a system, saying 
-that such a systems should have use of data not dependent of its persistence.
-They define following principles for such a system:
+environment. Atkinson \textit{et al.} also summarize requirements for such a
+system, saying that such a systems should have use of data not dependent of its
+persistence. They define following principles for such a system:
 \begin{enumerate}
-    \item The Principle of Persistence Independence. The form of a program is 
-    independent of the longevity of the data which it manipulates. Programs look 
-    the same whether they manipulate short-term or long-term data.
-    \item The Principle of Data Type Orthogonality. All data objects should be 
-    allowed the full range of persistence, irrespective of their type. There are 
-    no special cases where objects are not allowed to be long-lived or are not 
-    allowed to be transient.
-    \item  The Principle of Persistence Identification. The choice of how to 
-    identify and provide persistent objects is orthogonal to the universe of 
-    discourse of the system. The mechanism for identifying persistent objects is 
-    not related to the type system.
+    \item The Principle of Persistence Independence. 
+    
+    Whether a program manipulates data that outlives it or not, the ways to use
+    these data should be the same. There should be no significant difference in
+    program syntax in either case.
+
+    \item The Principle of Data Type Orthogonality. 
+    
+    Every data object should be allowed to have any level of persistence, 
+    irrespective of their type. There should be no special cases where objects
+    of some type can not be persistent or transient.
+    
+    \item  The Principle of Persistence Identification. 
+    
+    The choice of how to identify which objects are persistent and how To
+    provide persistence to them objects is not related to the universe of 
+    discourse of the system. The mechanism for identifying persistent objects 
+    should not also be related to the type system.
+
 \end{enumerate}
 
 Two popular approaches exist to build such a system. 
 
 One is to integrate interactions with databases or file systems into an existing 
 programming languages, which is what most ORM libraries do 
-\cite{аннин2018краткий,bayer2010sqlalchemy}. However, this approach is not 
+\cite{аннин2018краткий,copeland2008essential}. However, this approach is not 
 really transparent for a programmer, and may cause errors. 
 
-Another approach is to build so-called \textit{persistent worlds} 
-\cite{atkinson1995orthogonally}. These worlds are usually done in form of 
-operating systems, which provide necessary mechanisms to make state of   
-userspace processes managed by it persistent across systems restarts. 
+Another approach is to build the so-called \textit{persistent worlds} 
+\cite{atkinson1995orthogonally}. These worlds usually have form of 
+operating systems, which provide required mechanisms to make state of   
+userspace processes persistent across systems restarts. 
 Examples of such systems are KeyKOS \cite{bomberger1992keykos}, Grasshopper OS
 \cite{dearle1994grasshopper}, and Phantom OS.
 
-A question may arise at this point, isn't it possible to take an existing 
-popular operating system, and run it with nonvolatile memory as a main memory?
-The answer is no, because this raises two problems: problem of dealing with 
-changed peripheral device states during restarts \cite{berthou2018peripheral}, 
-and logical problems with code execution \cite{ransford2014nonvolatile}. That is
-why the question of building a persistent support system that will satisfy 
-orthogonal properties is not trivial. 
+A question may arise at this point, can an existent popular operating system, 
+run with nonvolatile memory as a main memory, and if it will make it 
+orthogonally persistent?
+The answer is no, because this approach raises two problems: problem of dealing
+with changed peripheral device states during restarts 
+\cite{berthou2018peripheral}, and logical problems with code execution 
+\cite{ransford2014nonvolatile}. A persistent support system must satisfy 
+orthogonal properties. Therefore building such a system is not trivial.
 
 \section{Networking in persistent systems}
-\dots This part is not done yet, however an outline was done for its contents
+\dots This part is not done yet, because research on this is still in progress.
+However an outline was done for its contents
 \begin{enumerate}
     \item Definition of problems with currently supported network stack. \\
     Example of problems:
     \begin{itemize}
         \item Lost connections and strategies to restore. 
         \item How stateful protocols can be changed? 
-        \item Can we use some intermediary message broker to manage communication?
+        \item Can we use some intermediary message broker to manage 
+        communication?
     \end{itemize} 
     \item Define requirements for protocol that are suitable for PSs
     \item Say what will be focus of work
@@ -116,9 +127,20 @@ OS needs drivers, which is often delivered by third-party developers. But in
 case when drivers are embedded in kernel error in driver can crash whole system.
 
 These are two reasons why it is desirable to replace Phantom kernel with a 
-microkernel, which is now in progress by my colleagues. My colleagues from
-Innopolis University are now working on porting Phantom OS to Genode OS 
-framework. I am going to use this port as soon as it will be ready.
+microkernel. My colleagues from Innopolis University are now working on porting
+Phantom OS to Genode OS  framework. I am going to use this port as soon as it 
+will be ready.
 
 \subsection{Genode OS framework} 
-\dots To be done
+The Genode OS Framework \cite{feske2015genode} is a toolkit for creating 
+operating systems. It provides possibility to build a microkernel operating \
+systems from set of existing components. Genode provides an API to integrate 
+various microkernels into it.
+
+For now the supported ones include Linux kernel, nova microhypervisor and several
+kernels from L4 kernel family. Supported kernels from the last family include
+L4ka::Pistachio, Fiasco.OC, formally verified seL4 microkernel, and L4/Fiasco.
+The framework also supports execution on a bare hardware on ARM and x86-64 ISA.
+
+Components provided by Genode usually fall into five categories: device drivers,
+resource multiplexers, protocol stacks, applications and runtime environments.
