@@ -114,3 +114,94 @@ moment.
 The exact structure of the data needed for the connection restore process and
 some conditions for successful persistence of sockets will be discussed in the
 following sections of this chapter.
+
+\subsection{Snapshot structure}
+
+As discussed earlier, I decided to make TCP stack persistent using periodic
+snapshotting.  To be useful in process of restoring the state, the snapshot
+should indeed have some data stored in it. The content of the snapshot is
+discussed in detail in this section.
+
+When deciding about snapshot structure, two distinct approaches exist.
+
+The first one is to make a full-memory snapshot, saving each page of virtual
+memory into persistent memory. To make it consistent, all threads that use
+these memory pages should be stopped, or writing to the pages should be
+prohibited.  One of the disadvantages of the snapshot is that is not userspace
+friendly, since memory pages are usually managed in the kernel. The last
+downside is its relatively big size, in terms of hundreds of megabytes. 
+
+The second approach is to use selective snapshotting. In this case, when the
+component forms a snapshot, it should first read some set of state variables
+from memory then serialize them together. After that, the serialized structure
+is persisted. The benefits of this approach are easier implementation, the
+smaller size of the snapshot structure, which consequently leads to the faster
+snapshot/restore process.
+
+I have chosen the second approach. Currently, Genode does not support
+full-memory snapshotting, and implementing it from scratch is almost
+impossible. Though it may be possible to mimic a full memory snapshot for a
+single component by persisting all its dataspaces, it poses additional
+challenges. For example, a dataspace might be shared with other components that
+are not persisted. In this case persistent component expects its sibling to
+write something to the dataspace they used for memory-mapped communication
+earlier, and the sibling is unaware of any communications before power loss.
+
+To snapshot socket state selectively, I was needed to decide on which data needs
+to be saved. 
+
+\begin{figure}
+    \centering
+    \includegraphics[]{figs/vfs_components.drawio.pdf}
+    \caption{Control path of socket API}
+    \label{fig:socket_via_vfs}
+\end{figure}
+
+Figure \ref{fig:socket_via_vfs} shows all libraries that are related to the
+socket interface. To find out, which of them contain state that needs to be
+snapshotted I have studied their source codes and how their clients should use
+them. 
+
+Libc is the library that provides a libc runtime and API for client
+applications. Part of the standard libc API is a socket API. It includes
+well-known functions socket(), bind(), listen(), and others. Genode libc
+implementation is based upon a FreeBSD libc with some adjustments. In this
+library socket API is implemented as a libc plugin. Libc plugin is a logically
+independent part of code, responsible for a single API. In this case, it is
+sockets API.  
+
+Libc socket plugin maintains a single Socket\_fs::Context structure per each
+created socket. This structure encapsulates a socket state variable \_state,
+which is used to determine which calls on the socket are allowed in the current
+state. The Context also has \_fd\_flags variable, which represents flags set on
+socket. To make the behavior of the plugin consistent after restore, the \_state
+and \_fd\_flags variables should be restored.
+
+Internally the libc plugin uses VFS to provide its functionality. VFS is
+implemented in form of a shared library, vfs.lib.so. This library is not
+interesting from point of snapshotting, as it does not contain any state
+itself.  The library in our case just a proxy and a dynamic loader for VFS
+plugins.
+
+State of vfs\_lwip.lib.so should certainly be snapshotted, as this library
+contains information required for operation of the TCP itself. Information is
+stored in form of Protocol Control Blocks (PCBs). PCB is a structure used at a
+protocol level that holds all the data needed for the protocol stack socket
+uses. More details about PCBs can be found at \cite{stevens1996tcp}. Each
+socket corresponds to exactly one PCB. Fortunately, it seems to be enough to
+save the states of all PCBs and then restore them.
+
+\subsection{Snapshot location}
+
+The goal of this paper is to design a persistent networking stack suitable for
+Phantom OS. Due to this, it is possible to include a snapshot of the TCP stack
+into the Phantom VM snapshot structure. However, I decided that a persistent
+network stack can be useful not only for the Phantom OS but also for other
+persistent systems. These systems can use other mechanisms for persistence. Due
+to this, I decided to make an abstract interface that has functions for saving
+and loading binary data from persistent memory.
+
+For simplicity, the only implementation of this service saves its state
+directly to the hard drive volume attached to VM. An implementation that saves
+and loads data using the Phantom snapshotting mechanism is currently in
+progress.
