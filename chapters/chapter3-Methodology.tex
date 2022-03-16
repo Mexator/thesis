@@ -117,25 +117,23 @@ following sections of this chapter.
 
 \subsection{Snapshot structure}
 
-As discussed earlier, I decided to make TCP stack persistent using periodic
+As discussed earlier, I decided to make a TCP stack persistent using periodic
 snapshotting.  To be useful in process of restoring the state, the snapshot
 should indeed have some data stored in it. The content of the snapshot is
 discussed in detail in this section.
 
-When deciding about snapshot structure, two distinct approaches exist.
-
-The first one is to make a full-memory snapshot, saving each page of virtual
-memory into persistent memory. To make it consistent, all threads that use
+When deciding about snapshot structure, two distinct approaches exist. The first one is to make a full-memory snapshot, saving each page of virtual
+memory into persistent memory. To make snapshot consistent, all threads that use
 these memory pages should be stopped, or writing to the pages should be
-prohibited.  One of the disadvantages of the snapshot is that is not userspace
+prohibited.  One of the disadvantages of this type of snapshot is that it is not userspace
 friendly, since memory pages are usually managed in the kernel. The last
 downside is its relatively big size, in terms of hundreds of megabytes. 
 
 The second approach is to use selective snapshotting. In this case, when the
-component forms a snapshot, it should first read some set of state variables
+component forms a snapshot, it should first read certain set of state variables
 from memory then serialize them together. After that, the serialized structure
-is persisted. The benefits of this approach are easier implementation, the
-smaller size of the snapshot structure, which consequently leads to the faster
+is persisted. The benefits of this approach are easier implementation, and the
+smaller size of the snapshot structure. The smaller snapshot size leads to the faster
 snapshot/restore process.
 
 I have chosen the second approach. Currently, Genode does not support
@@ -147,7 +145,7 @@ are not persisted. In this case persistent component expects its sibling to
 write something to the dataspace they used for memory-mapped communication
 earlier, and the sibling is unaware of any communications before power loss.
 
-To snapshot socket state selectively, I was needed to decide on which data needs
+To snapshot socket state selectively, I needed to decide which data needs
 to be saved. 
 
 \begin{figure}
@@ -162,7 +160,7 @@ socket interface. To find out, which of them contain state that needs to be
 snapshotted I have studied their source codes and how their clients should use
 them. 
 
-Libc is the library that provides a libc runtime and API for client
+The libc is the library that provides a libc runtime and API for client
 applications. Part of the standard libc API is a socket API. It includes
 well-known functions socket(), bind(), listen(), and others. Genode libc
 implementation is based upon a FreeBSD libc with some adjustments. In this
@@ -180,7 +178,7 @@ and \_fd\_flags variables should be restored.
 Internally the libc plugin uses VFS to provide its functionality. VFS is
 implemented in form of a shared library, vfs.lib.so. This library is not
 interesting from point of snapshotting, as it does not contain any state
-itself.  The library in our case just a proxy and a dynamic loader for VFS
+itself.  The library in our case is just a proxy and a dynamic loader for VFS
 plugins.
 
 State of vfs\_lwip.lib.so should certainly be snapshotted, as this library

@@ -1,0 +1,85 @@
+\chapter{Introduction}
+\section{Orthogonal persistence}
+Orthogonal persistence is a concept first introduced by Atkinson et al. in 
+\cite{atkinson1983ps}. 
+
+Atkinson in \cite{atkinson1995orthogonally} proposes to use persistence support
+systems to create orthogonally persistent environments. Applications that work
+in such environments are called orthogonally persistent. Generally their
+development is easier for two reasons. First, programmers do not need to write
+boilerplate code for serialization and deserialization of data that they want
+to save into a persistent storage. Since these applications have a smaller
+codebase, they tend to be less error-prone: smaller codebase offers less space
+for mistakes.
+
+Second, programmers of applications in persistent environments do not need to
+care about data loss in case of unexpected shutdown. For an application to be
+orthogonally persistent, it should have certain properties. The most important
+property is restart tolerance. That means that the application should not lose
+its state after the system is restarted. This property should hold for an
+arbitrarily long time between system shutdown and turning on. The exact
+definition of orthogonal persistence can be found below in section
+\ref{sec:LR:orth-persistence}.
+
+Up to the date, restoration of the internal state of a computer was actively
+researched
+\cite{landau1992checkpoint,dearle1994grasshopper,ransford2014nonvolatile,lucia2015simpler}.
+This problem was successfully solved in several persistent operating systems,
+including EROS, Grasshopper OS and Phantom OS. These operating systems allow
+the development of an application that continues execution after restarts
+without data loss. However, these systems do not guarantee that a given
+operation will be performed exactly once. Sometimes unexpected power loss can
+lead to results of a computation being lost. In this case, the system restores
+its state to an older position in time. That leads to performing some
+operations several times.
+
+\section{Handling I/O in persistent operating\\ systems}
+
+Any operating system has objects that do not belong to its internal state but
+instead represent some external resource. These objects are usually related to
+the system's input/output(I/O) interface. An example of such object can be an
+Unix file descriptor representing connection to some certain external device,
+for example a robotic arm. 
+
+Suppose the arm is initially at state $S_a$ and the persistent application is
+aware of that. Now assume that the application issues a blocking request $R$
+for transition of arm to new state $S_b$ and before this transition finishes an
+unexpected power loss occurs. In this case when the system goes back up the
+persistent application will issue the request $R$ again. But then the arm
+device will transition to the state $S_c$. This can cause problems, because the
+application does not expect this state. The same will happen even in case of
+absence of the pending request if something would interact with the robotic arm
+while the system is offline. 
+
+This simple example illustrates the need for special device drivers that will
+be aware of the transient nature of the environment and will set up I/O devices
+in accordance with expectations of persistent applications.
+
+Network communication is a type of I/O operation. That means that everything
+said above about problems with objects representing I/O operations in general
+applicable to objects representing network operations -- sockets.
+
+\section{Phantom OS}
+
+Phantom OS does not offer persistence of sockets for its applications. After
+each restart socket object becomes invalid - any operation on it results in
+error. The application that uses a socket is responsible for handling those
+errors and reopening a new socket, if it needs it. This behavior is not in
+accordance with the idea of orthogonal persistence. To achieve it, system
+restart should be transparent for an application, that is application should
+not know about any socket errors caused by restart.
+
+Until recently, it was infeasible to develop a solution for persisting sockets
+in Phantom OS. This would require modifications to Phantom kernel, which is not
+that easy. However, recent work on porting Phantom OS to Genode Framework made
+it possible. 
+
+In this port the Genode part is transient. It replaces the Phantom kernel and
+handles all the syscalls from the Phantom Virtual Machine. Due to the modular
+nature of Genode, well-written documentation, and flexibility of the framework
+one can easily change implementation of network-related syscalls. With these
+changes persistent applications running in PVM would not know about restart.
+This effectively provides a higher degree of persistence into Phantom OS.
+
+The goal of my work is to make a mechanism that will allow managing network
+state in the Genode part of the port.
