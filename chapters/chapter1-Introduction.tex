@@ -1,85 +1,92 @@
 \chapter{Introduction}
-\section{Orthogonal persistence}
-Orthogonal persistence is a concept first introduced by Atkinson et al. in 
-\cite{atkinson1983ps}. 
 
-Atkinson in \cite{atkinson1995orthogonally} proposes to use persistence support
-systems to create orthogonally persistent environments. Applications that work
-in such environments are called orthogonally persistent. Generally their
-development is easier for two reasons. First, programmers do not need to write
-boilerplate code for serialization and deserialization of data that they want
-to save into a persistent storage. Since these applications have a smaller
-codebase, they tend to be less error-prone: smaller codebase offers less space
-for mistakes.
+\section{Background}
 
-Second, programmers of applications in persistent environments do not need to
-care about data loss in case of unexpected shutdown. For an application to be
-orthogonally persistent, it should have certain properties. The most important
-property is restart tolerance. That means that the application should not lose
-its state after the system is restarted. This property should hold for an
-arbitrarily long time between system shutdown and turning on. The exact
-definition of orthogonal persistence can be found below in section
-\ref{sec:LR:orth-persistence}.
+Today, almost any enterprise application operates on data. A part of these data
+often should be \textit{persistent}, that is, should outlive the process that
+created it. In this definition \textit{a process} is not an operating system 
+process, but instead some abstract operation that creates data. 
 
-Up to the date, restoration of the internal state of a computer was actively
-researched
-\cite{landau1992checkpoint,dearle1994grasshopper,ransford2014nonvolatile,lucia2015simpler}.
-This problem was successfully solved in several persistent operating systems,
-including EROS, Grasshopper OS and Phantom OS. These operating systems allow
-the development of an application that continues execution after restarts
-without data loss. However, these systems do not guarantee that a given
-operation will be performed exactly once. Sometimes unexpected power loss can
-lead to results of a computation being lost. In this case, the system restores
-its state to an older position in time. That leads to performing some
-operations several times.
+The division between persistent and non-persistent data is not dichotomic.
+Several degrees of persistence exist -- from temporary values during expression
+evaluations to long-stored records in a database. For example, when a customer
+uses a bank card to purchase goods, the process is the withdrawal of money from
+their bank account. This process creates a record about the withdrawal that can
+be seen later in a bank app. In the case of expression evaluation, the process
+is an execution of a CPU instruction. 
 
-\section{Handling I/O in persistent operating\\ systems}
+This range of data persistence closely resembles the memory hierarchy of modern
+computers. Such similarity is for a reason: more persistent data are stored in
+slower and energy-independent upper levels of memory. The presence of the
+memory hierarchy brings the need for moving portions of data to lower memory
+levels when a program needs to access the data. On the other hand, the limited
+size of low memory levels forces programmers to move data that is no longer
+needed to the higher levels to make space for new data.
 
-Any operating system has objects that do not belong to its internal state but
-instead represent some external resource. These objects are usually related to
-the system's input/output(I/O) interface. An example of such object can be an
-Unix file descriptor representing connection to some certain external device,
-for example a robotic arm. 
+Modern operating systems manage moving data between the main memory and
+registers automatically, without the intervention from developers of
+applications for those systems. However, when an application needs to access
+data from the secondary storage, it should read and load data to the main
+memory by itself. Writing a program code for loading and saving data from and to
+secondary storage is a burden for developers of the applications.
 
-Suppose the arm is initially at state $S_a$ and the persistent application is
-aware of that. Now assume that the application issues a blocking request $R$
-for transition of arm to new state $S_b$ and before this transition finishes an
-unexpected power loss occurs. In this case when the system goes back up the
-persistent application will issue the request $R$ again. But then the arm
-device will transition to the state $S_c$. This can cause problems, because the
-application does not expect this state. The same will happen even in case of
-absence of the pending request if something would interact with the robotic arm
-while the system is offline. 
-
-This simple example illustrates the need for special device drivers that will
-be aware of the transient nature of the environment and will set up I/O devices
-in accordance with expectations of persistent applications.
-
-Network communication is a type of I/O operation. That means that everything
-said above about problems with objects representing I/O operations in general
-applicable to objects representing network operations -- sockets.
+To remedy this management of moving data between memory layers, Atkinson and
+Morrison \cite{atkinson1995orthogonally} propose to use persistent support
+systems. These systems are a software for automatic management of physical
+memory layers. The systems provide its users with a sandbox to run programs
+where all data virtually have the same persistence.
 
 \section{Phantom OS}
 
-Phantom OS does not offer persistence of sockets for its applications. After
-each restart socket object becomes invalid - any operation on it results in
-error. The application that uses a socket is responsible for handling those
-errors and reopening a new socket, if it needs it. This behavior is not in
-accordance with the idea of orthogonal persistence. To achieve it, system
-restart should be transparent for an application, that is application should
-not know about any socket errors caused by restart.
+The idea of persistent support systems was developed later with changing focus
+to operating systems \cite{landau1992checkpoint,dearle1994grasshopper}. The
+most modern of them up to date is Phantom OS. This system consists of a
+stateless kernel and a Phantom Virtual Machine (PVM). PVM hosts processes,
+which execution states persist across restarts of the host machine. Persistence
+is achieved with periodic snapshotting. In the context of Phantom OS, a
+snapshot is a memory dump of the PVM memory space. The system uses the latest
+snapshot as a recovery point on booting.
 
-Until recently, it was infeasible to develop a solution for persisting sockets
-in Phantom OS. This would require modifications to Phantom kernel, which is not
-that easy. However, recent work on porting Phantom OS to Genode Framework made
-it possible. 
+Even though Phantom OS is a working persistent support system, there is still a
+room for improvement. Currently, Phantom OS does not restore the state of the
+Transmission Control Protocol (TCP) stack. The operating system only handles
+sockets in the LISTEN state. If a socket was in this state when the snapshot
+was taken, the system will reopen it on boot and bind to the same address.
+Sockets in other states will become invalid. Any attempt to use these sockets
+will result in an error. The application that tries to use such socket will
+receive this error and will be responsible for its handling. Usually, that
+handling implies reestablishing a connection with a remote peer and restarting
+data transmission from the very beginning.
 
-In this port the Genode part is transient. It replaces the Phantom kernel and
-handles all the syscalls from the Phantom Virtual Machine. Due to the modular
-nature of Genode, well-written documentation, and flexibility of the framework
-one can easily change implementation of network-related syscalls. With these
-changes persistent applications running in PVM would not know about restart.
-This effectively provides a higher degree of persistence into Phantom OS.
+Because of the presence of these errors, existence in a persistent environment
+is not completely transparent for Phantom OS applications. Moreover, the common
+way of handling these errors, which was described above, results in inefficient
+network use, especially when power is off for a short period of time.
 
-The goal of my work is to make a mechanism that will allow managing network
-state in the Genode part of the port.
+\section{Problem statement}
+
+Recently, Phantom OS was ported to the Genode OS framework. The PVM was ported
+as a userspace Genode component, and all PVM syscalls are implemented as
+functions provided by other Genode parts. In particular, the network stack was
+implemented in the Genode as a Virtual File System (VFS) plugin. Due to this
+fact and the flexibility of the Genode VFS, changing implementation of the
+networking stack became easier in comparison to Phantom OS before this port. My
+hypothesis is that it is possible to develop an enhancement to the Phantom
+networking stack entirely in the Genode part of the port.
+
+The original document describing TCP \cite{john1981transmission} suggests using
+a Finite State Machine (FSM) to implement the protocol. Most implementations of
+the protocol, including the one used in Phantom-over-Genode (PoG), use this FSM
+technique. The theoretical challenge behind implementation of the enhancement
+described above is the integration of an external state machine into the
+Phantom persistence model. In this context, “external” means that the code of
+the state machine is not running as managed code inside PVM. The first aim of
+this paper is to develop a methodology for integrating such state machines into
+Phantom OS.  
+
+The second aim of this paper is to enhance PoG TCP stack to achieve two goals.
+The first is to reduce the number of errors that should be handled by
+applications supervised by the PVM. This means that as many errors as possible
+should be either prevented or handled at the Genode layer of the OS. The second
+goal is to make the network utilization more efficient. This means avoiding
+extra TCP transmissions, if they are not necessary.
