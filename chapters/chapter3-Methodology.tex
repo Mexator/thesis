@@ -1,5 +1,5 @@
 \chapter{Methodology}
-\label{chap:met}
+\label{chap:meth}
 
 This chapter starts with the analysis of requirements for implemented software.
 After that, the implementation is discussed in more detail in the dedicated
@@ -203,3 +203,18 @@ For simplicity, the only implementation of this service saves its state
 directly to the hard drive volume attached to VM. An implementation that saves
 and loads data using the Phantom snapshotting mechanism is currently in
 progress.
+
+/subsection{Approach with memory}
+As a first approach I tried to save memory pages that belong to network stack and 
+restore them on booting. At first I tried to snapshot the whole virtual address
+space of the component that uses network stack. However, this was problematic
+due to the nature of data inside a components' virtual memory. The problem was
+with kernel capabilities -- they are used throughout almost each part of the OS
+framework. In fact, the component can not exist without using at least one
+capability, and can not execute any code without using at least three - namely 
+Parent, CPU and RAM capabilities. This ubiquity of the capabilities and the fact
+that they become invalid after restart make straightforward dumping of full
+component's address space to disk impossible.
+
+The idea of using a proxy that will mask sequence numbers was inspired by
+proposal of using packet filters (see rocks-racks).

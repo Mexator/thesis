@@ -1,6 +1,7 @@
 \chapter{Introduction}
 
 \section{Background}
+\label{sec:intro-bg}
 
 Today, almost any enterprise application operates on data. A part of these data
 often should be \textit{persistent}, that is, should outlive the process that
@@ -28,7 +29,7 @@ registers automatically, without the intervention from developers of
 applications for those systems. However, when an application needs to access
 data from the secondary storage, it should read and load data to the main
 memory by itself. Writing a program code for loading and saving data from and to
-secondary storage is a burden for developers of the applications.
+secondary storage is a burden for developers of that applications.
 
 To remedy this management of moving data between memory layers, Atkinson and
 Morrison \cite{atkinson1995orthogonally} propose to use persistent support
@@ -90,3 +91,12 @@ applications supervised by the PVM. This means that as many errors as possible
 should be either prevented or handled at the Genode layer of the OS. The second
 goal is to make the network utilization more efficient. This means avoiding
 extra TCP transmissions, if they are not necessary.
+
+The rest of this thesis is structured as follows:
+Chapter \ref{chap:lr} contains a detailed description of persistence concept in
+and a review of related work. Chapter \ref{chap:meth} describes implementation
+details of the PoG port, approaches that were tried during the implementation
+and reasons why some of them were discarded in favor of others. Chapter 
+\ref{chap:eval} contains description of achieved results, experiments to
+evaluate them and a future directions for networking in persistent systems.
+

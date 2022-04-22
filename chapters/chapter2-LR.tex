@@ -2,33 +2,35 @@
 \label{chap:lr}
 \chaptermark{Second Chapter Heading}
 
-This chapter will begin with an overview of persistence concept in general,
-and in particular, orthogonal persistence in Section 1. Then, Section 2 will
-discuss how networking in persistent systems was implemented previously, and
-what are the requirements for a networking stack in such systems. The last
-section describes Phantom OS, Genode OS framework and current state of
-porting former to latter.
+This chapter begins with an overview of the concept of persistence in general
+and orthogonal persistence in Section 1. Section 2 describes TCP, tries to
+establish requirements for a networking stack in persistent systems and
+discusses related works. The last section of this chapter describes Phantom OS,
+Genode OS framework and the current state of porting the former to the latter.
 
 \section{Persistence}
 \subsection{Persistence definitions}
-Every program operates data. These data can be different in nature,
-and thus have different lifetimes. The lifetime of a data object is a time extent
-over which it can be used and is commonly called \textit{persistence} 
-\cite{atkinson1983ps}. 
 
-Atkinson \textit{et al.} \cite{atkinson1995orthogonally,atkinson1983ps} give a 
-classification of application data objects by their persistence, which is
-presented in Table \ref{tab:data_lifetimes}. Usually, support of levels 1-4
-relies on programming languages themselves, and for levels 5-8 designers of
-persistent applications rely on some external component, such as database or 
-file system. 
+The concept of \textit{data persistence} was informally introduced in Section
+\ref{sec:intro-bg}. The formal definition of this concept is presented below.
+The lifetime of a data is a time extent over which it can be used. This
+lifetime is commonly called \textit{persistence} \cite{atkinson1983ps}. 
+
+Atkinson \textit{et al.} \cite{atkinson1995orthogonally,atkinson1983ps} give a
+classification of application data by their persistence. This classification is
+presented in Table \ref{tab:data_lifetimes}. As it was said earlier, the
+support of levels 1-4 is usually provided by an operation system and a
+programming language. This is due to the fact that these data are stored at the
+main memory or lower memory levels.  On the other hand, to use levels 5-8
+applications designers should rely on some external component, such as database
+or file system. 
 
 \begin{longtable}{cl}
-\caption[Classification of data objects based on their lifetime]{Classification 
-of data objects based on their lifetime} 
+\caption[Classification of data based on their lifetime]{Classification of data
+based on their lifetime} 
 \label{tab:data_lifetimes} \\
 \hline
-1. & Transient results in expression evaluation \\
+1. & Intermediate results in expression evaluation \\
 2. & Local variables inside functions and code blocks \\
 3. & Global variables and heap items \\
 4. & Data that exists throughout a whole execution of a program \\
@@ -41,107 +43,186 @@ of data objects based on their lifetime}
 \subsection{Orthogonal persistence}
 \label{sec:LR:orth-persistence}
 
-Different ways of data interactions, namely using builtin programming language 
-constructs and external tools available via some interfaces, bring an extra
-layer of complexity to programs. To answer this problem, 
-\cite{atkinson1995orthogonally} proposes to use persistent support systems, 
-which act as a mediator between a persistent application and transient 
-environment. Atkinson \textit{et al.} also summarize requirements for such a
-system, saying that such a systems should have use of data not dependent of its
-persistence. They define following principles for such a system:
+As was stated in section \ref{sec:intro-bg} using inherent programming
+languages mechanisms and external mechanisms to access data interchangeably is
+a burden for programmers. Presence of different data formats in each of these
+storages makes this burden even heavier. As mentioned earlier, in response to
+this problem, \cite{atkinson1995orthogonally} proposes to use persistent
+support systems, which act as a mediator between supervised applications and
+a transient environment. Atkinson \textit{et al.} also summarize design
+requirements for such system, which they call \textit{Principles of Orthogonal
+Persistence}. The authors define the following requirements for an orthogonally
+persistent support system: 
+
 \begin{enumerate}
     \item The Principle of Persistence Independence. 
     
-    Whether a program manipulates data that outlives it or not, the ways to use
+    Whether a program manipulates data that outlive it or not, the ways to use
     these data should be the same. There should be no significant difference in
     program syntax in either case.
 
     \item The Principle of Data Type Orthogonality. 
     
-    Every data object should be allowed to have any level of persistence, 
+    Any part of data should be allowed to have any level of persistence, 
     irrespective of their type. There should be no special cases where objects
     of some type can not be persistent or transient.
     
     \item  The Principle of Persistence Identification. 
     
-    The choice of how to identify which objects are persistent and how To
-    provide persistence to them objects is not related to the universe of 
-    discourse of the system. The mechanism for identifying persistent objects 
-    should not also be related to the type system.
+    The choice of how to identify which objects are persistent and how to
+    provide persistence to them is not related to the universe of discourse of
+    the system. The mechanism for identifying persistent objects should not also
+    be related to the type system.
 
 \end{enumerate}
 
-Two popular approaches exist to build such a system. 
+A system that treats data according to these three principles is said to be
+\textit{orthogonally persistent}. Two popular approaches exist to build such a
+system. The first one is to integrate interactions with databases or file
+systems into an existing programming languages. In this case a program syntax to
+access data stored in the memory should look the same as access to data in a
+database. But a semantics behind this syntax can vary. This idea is quite similar
+to work of modern Object-Relational Mapping (ORM) libraries
+\cite{аннин2018краткий,copeland2008essential}. However, this approach is not
+really orthogonally persistent since most ORM libraries put certain limitations
+to what can be saved to the database. It also is sometimes problematic because a
+different meaning behind seemingly similar fragments of code confuses
+programmers.
 
-One is to integrate interactions with databases or file systems into an existing 
-programming languages, which is what most ORM libraries do 
-\cite{аннин2018краткий,copeland2008essential}. However, this approach is not 
-really transparent for a programmer, and may cause errors. 
+The second approach is to build so-called \textit{persistent worlds} 
+\cite{atkinson1995orthogonally}. These worlds usually have form of an operating
+system or a virtual machine. Applications residing in persistent worlds are
+written with managed code. From now on I will use the term \textit{persistent
+applications} for resident applications of persistent worlds.
 
-Another approach is to build the so-called \textit{persistent worlds} 
-\cite{atkinson1995orthogonally}. These worlds usually have form of 
-operating systems, which provide required mechanisms to make state of   
-userspace processes persistent across systems restarts. 
-Examples of such systems are KeyKOS \cite{bomberger1992keykos}, Grasshopper OS
-\cite{dearle1994grasshopper}, and Phantom OS.
+The fact that persistent applications are generally written with managed code
+enables a system to automatically manage states of the applications so that they
+have a consistent behavior across restarts. The examples of such systems are
+KeyKOS \cite{bomberger1992keykos}, Grasshopper OS \cite{dearle1994grasshopper},
+and Phantom OS. 
 
-A question may arise at this point, can an existent popular operating system, 
-run with nonvolatile memory as a main memory, and if it will make it 
-orthogonally persistent?
-The answer is no, because this approach raises two problems: problem of dealing
-with changed peripheral device states during restarts 
-\cite{berthou2018peripheral}, and logical problems with code execution 
-\cite{ransford2014nonvolatile}. A persistent support system must satisfy 
-orthogonal properties. Therefore building such a system is not trivial.
+Creation of persistent support systems that work with nonvolatile memory (NVM)
+as a main memory is an emerging research direction in field of persistent
+support systems. This approach seems to be more convenient for implementation of
+orthogonally persistent systems, but it still have unsolved problems.  The two
+examples of such problems are problem of dealing with changed states of
+peripheral devices after restarts \cite{berthou2018peripheral}, and logical
+problems with code execution \cite{ransford2014nonvolatile}. That is why
+creation of such system is not a trivial question. 
 
 \section{Networking in persistent systems}
-\dots This part is not done yet, because research on this is still in progress.
-However an outline was done for its contents
-\begin{enumerate}
-    \item Definition of problems with currently supported network stack. \\
-    Example of problems:
-    \begin{itemize}
-        \item Lost connections and strategies to restore. 
-        \item How stateful protocols can be changed? 
-        \item Can we use some intermediary message broker to manage 
-        communication?
-    \end{itemize} 
-    \item Define requirements for protocol that are suitable for PSs
-    \item Say what will be focus of work
-\end{enumerate} 
+
+The nature of persistent applications implies that their execution can be
+interrupted and then resumed after some time, when a host machine reboots. This
+creates a challenge when an application is designed to communicate with remote
+peers with a stateful network protocol. The challenge is to synchronize
+states of the communicating peers: while a local system is offline a remote peer
+can change a state of the connection indefinitely. Moreover, some persistent
+support systems, like Phantom OS, use snapshotting to create an illusion of
+uninterrupted execution. In case of such systems, the challenge is even more
+problematic, because a persistent peer can "forget" that it had sent or received
+some data. This happens if a record about data transfer was not embedded in a
+snapshot, for example due to an unexpected power loss.
+
+% Persistent applications can use stateless transport-level protocols, such as
+% UDP, and create application-level protocols that will mitigate the problems
+% arising in lifetime of persistent applications.
+
+The most popular transport layer protocol -- TCP -- is designed to provide a 
+reliable packet delivery service. The reliability is achieved with periodic
+retransmissions and acknowledgements. When a remote peer does not acknowledge a
+packet TCP prescribes to retransmit it. The maximum number of retransmissions is
+not stated in the original TCP specification \cite{john1981transmission}.
+However, the specification received updates later, which prescribe to retransmit
+packets with exponentially increasing delay \cite{rfc6298} until the timeout of
+at least 100 seconds \cite{rfc1122}. This means, that the most of
+implementations of TCP protocols will close a connection if their peer appears
+to be down for more than 100 seconds.
+
+The previous part of this section explains why persistent support systems should
+restore state of network connections in restoration phase when the execution was
+interrupted by a power loss. Several approaches were proposed to mitigate this
+issue. The first approach, proposed by Ekwall, Urb{\'a}n and Schiper
+\cite{ekwall2002robust}, is to create a session layer protocol that will behave
+similar to the original TCP specification with respect of timeouts. That is, the
+protocol will retransmit packets infinitely reopening underlying TCP connections
+as they get closed.
+
+The second approach was proposed by Zhang and Dao \cite{zhang1995persistent}.
+This article, as well as the previous one, proposes to use a session-layer
+protocol to create an abstraction of persistent connections, i.e. connections
+that outlive execution of a one peer. The authors propose to use a centralized
+notification service to transfer control messages. When this service detects
+that a process goes down the service notifies all peers communicating with the
+process. These processes switch their ends of connection to passive mode. In
+this mode blocking read operations are getting blocked, and writes are buffered.
+When the down process resumes its execution it registers in the notification
+service. The former peers of the process receive this notification and try to
+establish a connection to the continuation of the process. However, this
+approach can lead to loss of data that were in flight when a process comes down.
+
+Creation of a session-layer protocol on top of TCP is not the only way to
+implement persistent connections. Zandy \textit{et al.} in \cite{rocks_racks}
+propose a mechanism that hides disappearance of remote peer from applications
+that use TCP. The mechanism named \textit{rock} employs heartbeat probes via a
+separate UDP control socket to detect if a remote peer is gone. When a process
+detects loss of connection with a remote peer the process repeatedly tries to
+reconnect to its peer by the last known physical address. If loss of a peer was
+caused by network error, this will eventually succeed. Otherwise, reconnection
+attempt will be timed out. However, rocks mechanism provide large timeout and it
+can be changed in per-connection basis, unlike TCP. 
+
+To avoid loss of in-flight data when process restarts a rock keeps a buffer
+sized as sum of local host send buffer and peer host receive buffer. The buffer
+is used in a similar way as send buffer is used in TCP: the packets in the
+buffer are used to perform retransmissions.
 
 \section{Phantom OS and Genode OS framework}
 \subsection{Phantom OS}
-Phantom OS is a general-purpose operating system, developed in 2009-2011. This 
-is an orthogonally persistent operating system, in which persistence is brought
-using snapshotting of virtual memory. The operating system consists of kernel 
-and virtual machine, which executes all userspace programs written in Phantom 
-bytecode. Managed code execution is persistent, whereas kernel state is 
-transient, which means that it is not kept between reboots. It is assumed that 
-it can be restored. 
-Phantom is an experimental system, in a sense that it is developed as a 
-proof-of-concept and is not ready for production use.
 
-Phantom OS currently supports only i386 ISA, and it has all drivers builtin 
+Phantom OS is a general-purpose operating system, developed in 2009-2011. The
+operating system consists of a stateless kernel and virtual machine, which
+executes userspace applications. Phantom OS applications are written in Phantom
+programming language. The execution of managed code is persistent, which makes
+Phantom OS a persistent support system. As was said earlier, persistence for the
+managed code is achieved using snapshotting. Phantom is an experimental system,
+in a sense that it is developed as a proof-of-concept and is not ready for
+production use.
+
+Phantom OS currently supports only i386 ISA and it has all drivers embedded 
 inside a kernel. It is problematic, because to support wide range of hardware
 OS needs drivers, which is often delivered by third-party developers. But in
 case when drivers are embedded in kernel error in driver can crash whole system.
+Implementation of drivers as parts of kernel also complicate development and
+delivery of the drivers.
 
 These are two reasons why it is desirable to replace Phantom kernel with a 
-microkernel. My colleagues from Innopolis University are now working on porting
-Phantom OS to Genode OS  framework. I am going to use this port as soon as it 
-will be ready.
+microkernel. The port of Phantom OS to Genode OS framework is being developed
+right now. It is implemented as a Genode component running the PVM. This means,
+that network capabilities are provided by the Genode level of the PoG port. That
+is why I will concentrate my attention on development of a network stack working
+in Genode.
 
 \subsection{Genode OS framework} 
-The Genode OS Framework \cite{feske2015genode} is a toolkit for creating 
-operating systems. It provides possibility to build a microkernel operating \
-systems from set of existing components. Genode provides an API to integrate 
-various microkernels into it.
+The Genode OS Framework \cite{genode_foundations} is a toolkit for creating 
+operating systems. It provides possibility to build a microkernel operating
+systems from set of existing components. Genode also provides an API to
+integrate various microkernels into it.
 
-For now the supported ones include Linux kernel, nova microhypervisor and several
-kernels from L4 kernel family. Supported kernels from the last family include
-L4ka::Pistachio, Fiasco.OC, formally verified seL4 microkernel, and L4/Fiasco.
-The framework also supports execution on a bare hardware on ARM and x86-64 ISA.
+For now the supported kernels include Linux kernel, nova microhypervisor and
+several kernels from L4 kernel family. Supported kernels from the last family
+include L4ka::Pistachio, Fiasco.OC, formally verified seL4 microkernel, and
+L4/Fiasco.  The framework also supports execution on a bare hardware on ARM and
+x86-64 ISA.
 
 Components provided by Genode usually fall into five categories: device drivers,
 resource multiplexers, protocol stacks, applications and runtime environments.
+Genode has a VFS with possibility of adding custom plugins to it. For instance,
+a part of process memory can be exposed as a file with the ram-fs plugin. TCP
+stacks are also implemented as VFS plugins that expose each socket as a set of
+files. 
+
+Genode's IPC mostly consists of a blocking remote procedure calls (RPC). The TCP
+stacks use the Network interface card (Nic) RPC interface as an input. VFS
+plugins are not persistent. Therefore, I need to implement saving and restoring
+of state of a TCP stack before it can be used by PVM.  
