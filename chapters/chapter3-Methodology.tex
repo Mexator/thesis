@@ -1,82 +1,109 @@
 \chapter{Methodology}
 \label{chap:meth}
 
-This chapter starts with the analysis of requirements for implemented software.
-After that, the implementation is discussed in more detail in the dedicated
-section.
+This chapter starts with the analysis of requirements for the implemented
+software. In the second section of the chapter I will discuss possible
+approaches to adapt an external state machine to Phantom OS persistency model.
+The last section describes the implementation and design decisions in detail.
 
 \section {Requirements analysis}
 
 As previous chapters of this paper suggest, the goal of this paper is to create
-an implementation of a TCP/IP stack suitable for a persistent system. In
-particular, I use a port of Phantom OS to Genode OS framework as a target
-platform.
+an implementation of a TCP suitable for a persistent system. More precisely, I
+target a port of Phantom OS to Genode OS framework. This section contains a
+list of requirements that I will follow while designing my own protocol
+implementation.
 
-This section contains a list of requirements that a developer of such a stack
-should take into account when implementing their own port.
+\subsection {Transparency for client applications}
+Persistent support systems (PSSs) aim to make development of applications
+easier. The PSSs provide their clients with an abstraction of an uninterrupted
+execuiton. In a real world, however, a computer system may experience
+downtimes. The point of a PSS is to hide these downtimes from applications that
+use it. Such hiding of undesired effects is generally called
+\textit{transparency}.
 
-\subsection {Transparent peer disappearance}
-One of the fields in which persistent systems are actively applied is IoT. In an
-intermittently powered environment, a system that can efficiently restore its
-state is preferable to a system that experiences a booting process that consumes 
-a lot of energy.
+As discussed in Section \ref{sec:int:phantom}, the current implementation of
+networking stack is not transparent for the applications residing in PVM.
+Application designers should foresee existence of these errors and write
+handlers for them. To make PoG port really orthogonally persistent these errors
+should be hadled at PSS level, not by clients.
 
-In such cases, hosts can experience long downtimes. Standard TCP implementations
-are not applicable here because they perform retransmission of packets for only
-a limited amount of time, and then close connection.
+That means that the state of TCP connections should be the same before a
+shutdown and after a reboot. To achieve that a persistent TCP implementation
+should either (1) backup and restore connections state or (2) make the
+disappearance of a remote peer invisible for application on the other end of
+the connection. Of course, restoration of the state should be done before
+returning control to applications.
 
-To make the development of stable persistent applications easier a temporary 
-shutdown should be transparent for the client app. That means that the network 
-connections state should be the same when the powered-off host restarts.
-To achieve that persistent TCP implementation should either (1) backup and
-restore connections state or (2) make the disappearance of the remote peer
-invisible for application on the other end of the connection.
+(1) can be achieved with reestablishing connections on startup. However, the
+remote peer should be ready to the reestablishment request. This is problematic
+in case when a persistent host plays role of a server in a client-server
+communication. (2) can be achieved with use of an message broker that will
+mimic an alive host with full TCP input queue. Thus it will keep the connection
+alive but prohibit sending packets to the channel. Another way to achieve (2)
+is to send a control message to the remote socket. The remote TCP in this case
+should efficiently do the same thing as a message broker did. It should mimic
+live connection that cannot accept data. The drawback of this approach is that
+to exchange control messages both communicating peer should have enhanced TCP
+stack.
 
-\subsection {Rollbacks}
+\subsection {Robustness to rollbacks}
 
-The technique used in Phantom OS to provide persistence is memory snapshots of 
-PVM memory space. They are taken in a live mode so that processes inside the VM
-continue to run. Then, when power is back on, the latest snapshot is restored by
-copying it to the main memory. The part of Phantom that is outside of VM is
-assumed to be stateless in the usual case, which is not the case in Genode port.
-That is why snapshotting and restoring of Genode part of the system is done with
-callbacks, which accept and provide blobs of data to be saved in persistent 
-memory. 
+Phantom OS uses full-memory snapshots of PVM memory space to provide
+persistence for its clients. Snapshots are taken in a live mode so that
+processes inside the VM continue to run. Due to the two previous facts,
+computational operations of PVM applications can be executed more than once.
+For example, assume that an application receives packets A, B, and C.  Assume
+that after packet A is received, snapshot is performed. While it was on
+progress, the application receives packet B. After the snapshot was made,
+applications reveives packet C and immediately after this machine goes down.
+After the snapshot would be restored the application will have no knowledge
+that it already received packets B and C. Thus the application will send ACK
+packet for A, which will result in error because the remote peer does not
+expect this ACK. Moreover, it is unable to retransmit this packet, since it is
+not exist in remote TCP's retransmission queue, because it was already
+acknowledged when the application received B and C.
 
-In the case of the intermittently powered Phantom system, this can cause
-trouble, when clients actively use networking. While the system performs a
-snapshot, the TCP stack can still proceed with receiving data. In this case,
-TCP on receiving side will acknowledge packets, as protocol prescribes.
-The issue is that acknowledged packets are getting deleted from the
-retransmission queue, and therefore not present at the sending site. However,
-they are not present in the snapshot on the receiver's side. In this case, after
-the snapshot is used to restore the state of the receiver, the receiver will
-request the packet (with duplicated ACK) that the sender is unable to 
-retransmit. In this case, the sender's TCP will respond with RST and then close
-the connection.
+Phantom OS snapshot mechanism takes into account that snapshot is not a atomic
+process. Thus, in usual case it would handle reception of packet B properly,
+i.e. the client application would know that B was received. But in case of 
+PoG the TCP stack is not stateless like Phantom kernel but still transient.
+Therefore, if TCP receives a packet but does not passes it to the application
+before restart, this packet may be lost. The remote peer expects that the
+application processed it but the application never received it because TCP did
+not finish delivering it to the application.
 
-Three solutions exist that may solve the problem above. One is to forbid
-sending acknowledgment packets if a received packet is not included in any
+Three solutions exist that may solve the problem above. The first is to refrain
+from sending acknowledgment packets if a received packet is not included in any
 snapshot. However, this will either dramatically increase the number of
 retransmissions in a network, which will result in reduced network performance
-or it will require doing snapshots very often. In such a case snapshot should
-be performed each 50ms. With a snapshot duration of around 10 seconds, this is
-not acceptable.  
+or it will require doing snapshots very often. In such case a snapshot should
+be performed each 50ms to avoid extra network congestion at all. However, in
+PoG a snapshot runs for around 10 seconds. This approach is not acceptable with
+such a long snapshot.  
 
-The other solution is to keep a buffer in a persistent memory that will store
-all packets that a user of TCP had not consumed yet. In this case, persistent
-memory can be a regular file or memory space that will fall into a snapshot for
-sure.
+The second solution is to keep in persistent memory a buffer that will store
+all packets that TCP clients had not consumed yet. In this case persistent
+memory can be a regular file or snapshotted memory space. 
 
-The third approach is to have a dedicated broker inside a network that will
-function similarly to the buffer in the second case. The broker can save all
-acknowledged packets in a network, and flush its queue when it detects that
-receiving host has done a snapshot. ICMP messages or some similar mechanism
-will be useful to notify the broker about the end of the snapshot process.
+The third approach is to have a message broker inside a network that will
+function similarly to the buffer in the second approach. The broker can save
+all acknowledged packets in a network, and flush its queue when it detects that
+receiving host has done a snapshot. ICMP messages or some similar stateless
+network protocol could be useful to notify the broker about the end of the
+snapshot process.
+
+\subsection {Usefullness}
+
+Phantom OS is already capable of restoring sockets in CLOSED and LISTEN states.
+For a Genode implementation of a persistent TCP to be useful it should work for
+the same or bigger set of states. Even if the developed software will only
+support the same set of states the fact that the software is implemented as a
+Genode component will greatly improve maintainablility of the software.
 
 \subsection {Compatibility with existing protocols}
 
-The third design goal is not directly related to providing persistent I/O
+The last design goal is not directly related to providing persistent I/O
 abstraction to the clients of a network stack. Since snapshotting is a very
 popular technique for implementing persistent systems, and Genode is actively
 used to develop various operating systems, it is probable that some other
@@ -85,18 +112,51 @@ developers might want to use persistent TCP in their software.
 That means that result of this work should be a standalone application that
 works without Phantom and is flexible enough to support all use cases that may
 arise. Fortunately, Genode's component-based architecture helps greatly with
-it.
+it. Another reason to make persistent TCP implementation a standalone
+application is that the PoG port is not yet ready for me to experiment with it.
 
 Another thing that should be addressed in the design of the API of the system,
-is easy migration from non-persistent TCP stacks already available in Genode,
-namely lwip and lxip. To do this I intend to design API very similar to regular
-sockets or even exactly the same, but with different call semantics. I also
-plan to add a Virtual File System (VFS) plugin that will expose sockets as
+is easy migration from non-persistent TCP stacks that are already available in
+Genode, namely lwip and lxip. To do this I intend to design API very similar to
+regular sockets or even exactly the same, but with different call semantics. I
+also plan to add a Virtual File System (VFS) plugin that will expose sockets as
 regular files because this is the way how Genode developers suggest
 integrating sockets into the Genode ecosystem since version 18.11. With such
 implementation, even relinking of existing binary will be not needed. The only
 thing user would need is to change the configuration of the init Genode
 component.
+
+\section{On persisting of finite state machines}
+
+Most TCP implementations implement logical state of the sockets as finite state
+machines. Since the goal of the paper is to create a persistent TCP
+implementation, it might be useful to consider how an arbitrary FSM can be
+snapshotted to restore it later to the same state from the snapshot. 
+
+The most straightforward and universal way to achive the desired outcome is to
+use a full-memory snapshot of a running process. Full-memory snapshot should
+include stack and address space. Also it should include current context, i.e.
+general-purpose registers and the program counter. Obtained snapshot should be
+stored in a persistent memory and loaded to the apropriate memory on restore.
+In principle, this approach would work for any running process.
+
+The second approach is to directly access current state of the FSM. Usually FSM
+are implemented on C and C++ as structs or classes holding current state as an
+value of an enumerable type. If it is possible to access these structures
+directly, simple saving and loading them would work. In some cases, for example
+sockets, there are several state machines: one per socket. In such cases FSMs
+should be registered at the supervisor that controls inputs and stores FSM
+structures.
+
+The last approach requires knowing of internal functioning of an FSM. When all
+states and transitions of FSM are known in advance, it is possible to implement
+FSM with the same transitions. When the tracking FSM is provided with the same
+inputs as the target one states of both FSMs should be in sync. Assessing state
+of the tracking FSM will allow observer to determine state of the target FSM.
+Moreover, tracking of inputs greatly helps in restoration phase. To restore
+state of the target FSM it is enough to provide it with the same inputs once
+again. This approach is useful when an FSM does not have a centralized state or
+when it cannot be easily accessed.
 
 \section{Implementation process}
 

@@ -19,7 +19,7 @@ lifetime is commonly called \textit{persistence} \cite{atkinson1983ps}.
 Atkinson \textit{et al.} \cite{atkinson1995orthogonally,atkinson1983ps} give a
 classification of application data by their persistence. This classification is
 presented in Table \ref{tab:data_lifetimes}. As it was said earlier, the
-support of levels 1-4 is usually provided by an operation system and a
+support of levels 1-4 is usually provided by an operating system and a
 programming language. This is due to the fact that these data are stored at the
 main memory or lower memory levels.  On the other hand, to use levels 5-8
 applications designers should rely on some external component, such as database
@@ -111,6 +111,7 @@ problems with code execution \cite{ransford2014nonvolatile}. That is why
 creation of such system is not a trivial question. 
 
 \section{Networking in persistent systems}
+\label{sec:lr:networking}
 
 The nature of persistent applications implies that their execution can be
 interrupted and then resumed after some time, when a host machine reboots. This
@@ -135,9 +136,9 @@ packet TCP prescribes to retransmit it. The maximum number of retransmissions is
 not stated in the original TCP specification \cite{john1981transmission}.
 However, the specification received updates later, which prescribe to retransmit
 packets with exponentially increasing delay \cite{rfc6298} until the timeout of
-at least 100 seconds \cite{rfc1122}. This means, that the most of
-implementations of TCP protocols will close a connection if their peer appears
-to be down for more than 100 seconds.
+at least 100 seconds \cite{rfc1122}. This means, that the most TCP
+implementations will close a connection if their peer appears to be down for
+more than 100 seconds.
 
 The previous part of this section explains why persistent support systems should
 restore state of network connections in restoration phase when the execution was
