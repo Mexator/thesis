@@ -1,6 +1,20 @@
 \appendix
-\chapter{Extra Stuff}
-\blindtext
+\chapter{Implementation}
+This section contains source code fragments used in discussion of
+implementation.  
 
-\chapter{Even More Extra Stuff}
-\blindtext
+\section{Example configuration for Genode component with networking
+capabilities}
+\label{appex:conf-sample}
+
+\begin{lstlisting}
+<start name="test" caps="100" priority="-1">
+  <resource name="RAM" quantum="50M"/>
+  <config>
+    <vfs>
+      <dir name="socket"> <ptcp dhcp="yes"/> </dir>
+    </vfs>
+    <libc socket="/socket"/>
+  </config>
+</start>
+\end{lstlisting}

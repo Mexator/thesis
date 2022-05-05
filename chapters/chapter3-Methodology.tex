@@ -127,6 +127,7 @@ thing user would need is to change the configuration of the init Genode
 component.
 
 \section{On persisting of finite state machines}
+\label{sec:meth:fsms}
 
 Most TCP implementations implement logical state of the sockets as finite state
 machines. Since the goal of the paper is to create a persistent TCP
@@ -138,7 +139,9 @@ use a full-memory snapshot of a running process. Full-memory snapshot should
 include stack and address space. Also it should include current context, i.e.
 general-purpose registers and the program counter. Obtained snapshot should be
 stored in a persistent memory and loaded to the apropriate memory on restore.
-In principle, this approach would work for any running process.
+In principle, this approach would work for any running process. A drawback of
+this approach is that an operating system should provide mechanisms to allow
+such manipulations with address spaces.
 
 The second approach is to directly access current state of the FSM. Usually FSM
 are implemented on C and C++ as structs or classes holding current state as an
@@ -148,106 +151,218 @@ sockets, there are several state machines: one per socket. In such cases FSMs
 should be registered at the supervisor that controls inputs and stores FSM
 structures.
 
-The last approach requires knowing of internal functioning of an FSM. When all
-states and transitions of FSM are known in advance, it is possible to implement
-FSM with the same transitions. When the tracking FSM is provided with the same
-inputs as the target one states of both FSMs should be in sync. Assessing state
-of the tracking FSM will allow observer to determine state of the target FSM.
-Moreover, tracking of inputs greatly helps in restoration phase. To restore
-state of the target FSM it is enough to provide it with the same inputs once
-again. This approach is useful when an FSM does not have a centralized state or
-when it cannot be easily accessed.
+The last approach requires knowing of internal functioning of an FSM. When the
+set of all possible states and transitions of FSM is known in advance, it is
+possible to implement FSM with the same transitions. When the tracking FSM is
+provided with the same inputs as the target one states of both FSMs should be
+in sync. Assessing state of the tracking FSM will allow observer to determine
+state of the target FSM.  Moreover, tracking of inputs greatly helps in
+restoration phase. To restore state of the target FSM it is enough to provide
+it with the same inputs once again. This approach is useful when an FSM does
+not have a centralized state or when it cannot be easily accessed.
 
 \section{Implementation process}
 
-I have chosen to implement a persistent TCP stack in form of a Genode component
-that will serve as a plugin for a VFS. The users of the TCP stack should add
-signal handlers to their components for signals of type SIG\_SNAP and
-SIG\_RESTORE. When SIG\_SNAP is received, it is passed to the persistent TCP VFS
-plugin which gathers data that should be saved into persistent memory and calls
-filesystem service to save socket snapshot structure into persistent memory.
+\subsection{Components of Genode network stack}
 
-Symmetrically, when SIG\_RESTORE is received, the component will access the
-previously saved file and read information about sockets state at the snapshot
-moment.
+\begin{figure}
+    \centering
+    \includegraphics[]{figs/genode-network-stack.pdf}
+    \caption{Components of Genode network stack}
+    \label{fig:net-components}
+\end{figure}
 
-The exact structure of the data needed for the connection restore process and
-some conditions for successful persistence of sockets will be discussed in the
-following sections of this chapter.
+Before discussing the implementation details of developed persistent TCP stack
+it is necessary to consider how Genode network stack works. Figure
+\ref{fig:net-components} depicts components and libraries that are required to
+enable a network access for a client application. In this diagram Nic stands
+for Network interface controller. Nic component is a mediator for packets that
+are produced and consumed by applications and network drivers. As can be seen
+from the diagram, Nic interface provides two RCP interfaces: the Uplink
+interface is used by network drivers, and the Nic interface is used by client
+applications. Nic interface exposes network packets as Ethernet frames.
+
+The Nic RPC interface is almost never used directly. Instead most applications
+tend to use Berkeley sockets API, which include well-known functions socket(),
+bind(), connect(), listen, and others. This API is provided by libc. Genode's
+libc is based by FreeBSD libc and its functions are implemented by so-called
+libc plugins. Berkeley sockets API is implemented in the socket\_fs plugin.
+This plugin depends on Genode VFS. The plugin expects VFS to expose each socket
+as a set of virtual files.
+
+The socket\_fs plugin should be used in conjunction with a socket VFS plugin. 
+Such VFS plugin generally is merely an adapter between a Nic session and port
+of some popular TCP stack. A port is denoted by "lwip" on the Figure
+\ref{fig:net-components}. For now, two TCP ports available in Genode -- lxip,
+which is a port of Linux TCP/IP stack, and lwip. Usually TCP stack is
+statically linked with a VFS plugin, and VFS plugins are shared libraries which
+are loaded in runtime.
+
+Each Genode component has an initial configuration that is written as an XML
+"config" node. The node also may contain configuration for VFS, if a component
+needs one. Configurations for VFS and libc are located at "vfs" and "libc"
+sub-nodes of "config". Each VFS directory can have a plugin that will handle
+access to the directory and all its subdirectories and files. Plugins libraries
+are resolved in the runtime when a component initializes. To use libc with a
+socket VFS plugin component should place a VFS plugin to some directory and
+pass path to this directory to the libc config. A minimal example configuration
+for Genode component that is able to use network is given in the Appendix
+\ref{appex:conf-sample}
+
+I had a hypothesis that persistent TCP stack can be implemented as a VFS plugin
+wrapping another VFS plugin. The inner VFS plugin would provide a "real" 
+TCP interface, and the outer plugin would supervise the inner one to save and
+restore its state as needed. I decided to name the plugin PTCP from "persistent
+TCP". PTCP uses lwip VFS plugin. PTCP is dynamically linked with the plugin, at
+the runtime it loads vfs\_lwip shared library. This dynamic linkage was done by
+design, with the assumption that system that has components using PTCP can also
+have components that use plain lwip VFS plugin, since it is popular among
+Genode software.
 
 \subsection{Snapshot structure}
 
-As discussed earlier, I decided to make a TCP stack persistent using periodic
-snapshotting.  To be useful in process of restoring the state, the snapshot
-should indeed have some data stored in it. The content of the snapshot is
-discussed in detail in this section.
+The PoG port was not ready during the most of the time this work was in
+progress. However, the technique this port uses to achieve persistence was
+known in advance. The technique is snapshotting just like in plain Phantom OS.
+To use snapshotting I needed to decide what data should be included in a
+snapshot. I tried several different approaches with respect to the snapshot
+content. The content of a snapshot is discussed in detail in this subsection.
 
-When deciding about snapshot structure, two distinct approaches exist. The first one is to make a full-memory snapshot, saving each page of virtual
-memory into persistent memory. To make snapshot consistent, all threads that use
-these memory pages should be stopped, or writing to the pages should be
-prohibited.  One of the disadvantages of this type of snapshot is that it is not userspace
-friendly, since memory pages are usually managed in the kernel. The last
-downside is its relatively big size, in terms of hundreds of megabytes. 
+The first attempt to snapshot a TCP implementation concluded in saving the
+state of socket state machine. This is the second approach proposed in Section
+\ref{sec:meth:fsms}. For simplicity I decided to start with saving and
+restoring a specific VFS plugin -- lwip. lwip represents a socket as a protocol
+control block (PCB). PCB is a structure that holds values that are required for
+protocol functioning. For example, TCP PCB encapsulates current state, SEQ
+number, ACK number, and several other fields. lwip keeps all PCBs in the few
+linked lists. References to these lists are located at static section of lwip
+binary.
 
-The second approach is to use selective snapshotting. In this case, when the
-component forms a snapshot, it should first read certain set of state variables
-from memory then serialize them together. After that, the serialized structure
-is persisted. The benefits of this approach are easier implementation, and the
-smaller size of the snapshot structure. The smaller snapshot size leads to the faster
-snapshot/restore process.
+The challenge was to access the lists from the PTCP plugin. PTCP can access the
+address space of the inner plugin but the problem was that lwip is statically
+linked to the vfs\_lwip plugin. Moreover, all lwip symbols are erased during
+the linkage from the binary. The only symbol exposed from vfs\_lwip is a
+function that returns a factory for lwip plugin instances. To overcome this
+issue I reconfigured vfs\_lwip to include lwip as a shared library. With this
+reconfiguration I was able to access lwip internal structures from PTCP plugin.
+Both vfs\_lwip and PTCP used the lwip shared library. The VFS pluigins existed
+in the same Genode component, so they used the same "instance" of lwip.
+Relationships between the libraries are presented at the Figure
+\ref{fig:lib_deps}. There lwip\_dl.lib.so denotes lwip in form of shared
+library.
 
-I have chosen the second approach. Currently, Genode does not support
-full-memory snapshotting, and implementing it from scratch is almost
-impossible. Though it may be possible to mimic a full memory snapshot for a
-single component by persisting all its dataspaces, it poses additional
-challenges. For example, a dataspace might be shared with other components that
+\begin{figure}
+    \centering
+    \includegraphics[]{figs/ptcp_libs.pdf}
+    \caption{Relationships between the libraries comprising PTCP}
+    \label{fig:lib_deps}
+\end{figure}
+
+After I manage to access the internal state of lwip in form of PCBs I started
+implementing saving it to persistent storage. A PCB is a C structure and I
+tried to save each PCB corresponding to socket field by field to a file.
+However, in the process of implementing I discovered the two issues that made
+me abandon this approach. The first problem that I discovered was a rather
+complex structure of the PCBs. The tcp\_pcb structure includes more than 60
+members and some of them are not atomic values but rather nested structures or
+buffers. Also list of members of tcp\_pcb can vary depending on compile-time
+config. The second issue was that despite my assumption sockets state was
+stored not solely on lwip PCB lists but also at the lwip VFS plugin level and
+even in libc. Therefore even if I would proceed with snapshotting lwip internal
+structures I would not achieve desired effect.
+
+To mitigate the two issues above I decided to abandon the idea of saving state
+holding structures on the field-by-filed basis and instead proceed with saving
+and loading memory that belongs to them.
+
+\subsection{Approach with memory}
+As a second approach I tried to save memory pages that belong to network stack
+and restore them on component startup. Genode manages virtual memory with use
+of Allocator class instances. I have subclassed the base Allocator class and
+created a class that was able to track virtual addresses it allocated, save
+allocated regions to a file, and load them back to virtual memory. I applied
+this allocator so that it saved and restored heap dataspaces related to libc,
+lwip VFS plugin and lwip itself.
+
+At this point I faced a problem related to restoration of heap space. If a heap
+space is prepopuilated before an allocator is passed to its user it will never
+use this space. The allocator will never return adresses belonging to the
+address range of the space in response to the user's allocation request. After
+I understood the problem I changed the implementation so that it overwrote an
+address range \textit{after} it was returned in response to user's request. That
+is the program detected that the TCP stack finished its initialization and then
+overwrote its address space with memory from previous boot of the system.
+However, this approach did not work by the two reasons. 
+
+The first reason was the presence of the kernel capabilities inside the address
+space. Capabilities are used throughout almost each part of the Genode OS
+framework. In fact, the component can not exist without using at least one
+capability, and can not execute any code without using at least three - namely
+Parent, CPU and RAM capabilities. lwip VFS plugin should use eight more
+capabilities to use Nic RPC interface. Each allocated address range consumes
+one dataspace capability to use virtual memory service RPC interface. This
+ubiquity of capabilities and the fact that they become invalid after restart
+make straightforward saving and loading of component's memory to disk
+impossible. This approach becomes even more complicated if a snapshotted
+component uses shared memory. For example, Nic servers use zero-copy packet
+delivery mechanism to increase memory throughput. This mechanism implies
+establishment of shared memory between client and server components.
+
+The second and the main issue with the raw memory saving approach is that
+layout of structures in the memory is undefined. The layout depends on order
+of allocation requests and presence of Address space layout randomization
+(ASLR). The interface of Allocator class does not allow the allocator determine
+the purpose of allocation, i.e. what structure will be placed in the newly
+created dataspase. These two issues explain why I decided to stop work in this
+direction and decided to shift focus to a completely different approach.
+
+For example, a dataspace might be shared with other components that
 are not persisted. In this case persistent component expects its sibling to
 write something to the dataspace they used for memory-mapped communication
 earlier, and the sibling is unaware of any communications before power loss.
 
-To snapshot socket state selectively, I needed to decide which data needs
-to be saved. 
+\subsection{Observer state machine}
 
-\begin{figure}
-    \centering
-    \includegraphics[]{figs/vfs_components.drawio.pdf}
-    \caption{Control path of socket API}
-    \label{fig:socket_via_vfs}
-\end{figure}
+The main idea of the new approach was to build a tracker that will know the
+internal state of every socket without directly accessing those states. This
+idea is the third approach that was proposed in section \ref{sec:meth:fsms}. 
+We can treat each socket as a graybox where the inputs are user-called
+functions and TCP packets from network. The outputs of this box are packets
+that are scheduled for sending at the Nic server and data chunks delivered to
+clients of TCP stack.
 
-Figure \ref{fig:socket_via_vfs} shows all libraries that are related to the
-socket interface. To find out, which of them contain state that needs to be
-snapshotted I have studied their source codes and how their clients should use
-them. 
+The libc transforms user calls to Berkeley socket API into file access
+operations. This operations are processed by Genode VFS. It delegates
+operations to its plugins. In our case all socket operations are processed by
+the PTCP plugin. To enable PTCP track VFS calls I created a wrapper around
+FS factory exposed by the PTCP inner plugin. This wrapper creates a new
+proxy filesystem that delegates processing all calls to FS returned by the
+inner plugin. The proxy FS is equipped with a tracking delegate that notifies
+the tracker about each accessed file. The tracker keeps a one metadata
+structure per each socket. When a tracking delegate notifies the tracker it
+searches the socket metadata that corresponds to the accesses file. Then the
+tracker updates the structure according to the new socket state.
 
-The libc is the library that provides a libc runtime and API for client
-applications. Part of the standard libc API is a socket API. It includes
-well-known functions socket(), bind(), listen(), and others. Genode libc
-implementation is based upon a FreeBSD libc with some adjustments. In this
-library socket API is implemented as a libc plugin. Libc plugin is a logically
-independent part of code, responsible for a single API. In this case, it is
-sockets API.  
+To enable tracking and control for the arriving network packets I added a
+secondary Nic server that scans headers of incoming packets and notifies the
+tracker. The tracker is the same one that was discussed above. The presence of
+tracker allows PTCP to intercept incoming packets without changing code of the
+inner plugin. 
 
-Libc socket plugin maintains a single Socket\_fs::Context structure per each
-created socket. This structure encapsulates a socket state variable \_state,
-which is used to determine which calls on the socket are allowed in the current
-state. The Context also has \_fd\_flags variable, which represents flags set on
-socket. To make the behavior of the plugin consistent after restore, the \_state
-and \_fd\_flags variables should be restored.
+To restore state of the sockets I added a client library that is used on
+component startup. During initialization the library reads a snapshot, reopens
+each socket present in the snapshot, and brings them to the last known state.
+Restoration of the state is performed with the sequence of calls to Berkeley
+socket API, and RPC calls to the proxy Nic server. The proxy Nic is responsible
+for restoration of those parts of socket state that can not be set by user. For
+example, these parts include sequence and acknowledgements numbers. To restore
+those values the Nic proxy acts similar to the NAT mechanism in routers. But 
+instead of changing source and destination ports values in TCP packet headers
+the Nic proxy changes headers so that the remote side of the connection would
+recognise the newly opened socket as the old one. The idea of proxy was highly
+inspired by the use of Linux kernel packet filters in \cite{rocks_racks}.
 
-Internally the libc plugin uses VFS to provide its functionality. VFS is
-implemented in form of a shared library, vfs.lib.so. This library is not
-interesting from point of snapshotting, as it does not contain any state
-itself.  The library in our case is just a proxy and a dynamic loader for VFS
-plugins.
-
-State of vfs\_lwip.lib.so should certainly be snapshotted, as this library
-contains information required for operation of the TCP itself. Information is
-stored in form of Protocol Control Blocks (PCBs). PCB is a structure used at a
-protocol level that holds all the data needed for the protocol stack socket
-uses. More details about PCBs can be found at \cite{stevens1996tcp}. Each
-socket corresponds to exactly one PCB. Fortunately, it seems to be enough to
-save the states of all PCBs and then restore them.
+% TODO Illustration fot architecture of the system
 
 \subsection{Snapshot location}
 
@@ -264,17 +379,3 @@ directly to the hard drive volume attached to VM. An implementation that saves
 and loads data using the Phantom snapshotting mechanism is currently in
 progress.
 
-/subsection{Approach with memory}
-As a first approach I tried to save memory pages that belong to network stack and 
-restore them on booting. At first I tried to snapshot the whole virtual address
-space of the component that uses network stack. However, this was problematic
-due to the nature of data inside a components' virtual memory. The problem was
-with kernel capabilities -- they are used throughout almost each part of the OS
-framework. In fact, the component can not exist without using at least one
-capability, and can not execute any code without using at least three - namely 
-Parent, CPU and RAM capabilities. This ubiquity of the capabilities and the fact
-that they become invalid after restart make straightforward dumping of full
-component's address space to disk impossible.
-
-The idea of using a proxy that will mask sequence numbers was inspired by
-proposal of using packet filters (see rocks-racks).
