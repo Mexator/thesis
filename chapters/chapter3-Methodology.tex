@@ -360,9 +360,70 @@ those values the Nic proxy acts similar to the NAT mechanism in routers. But
 instead of changing source and destination ports values in TCP packet headers
 the Nic proxy changes headers so that the remote side of the connection would
 recognise the newly opened socket as the old one. The idea of proxy was highly
-inspired by the use of Linux kernel packet filters in \cite{rocks_racks}.
+inspired by the use of Linux kernel packet filters in \cite{rocks_racks}. The
+complete architecture of network stack with tracking and restoring of TCP
+sockets states is presented on Figure \ref{fig:track_components}.
 
-% TODO Illustration fot architecture of the system
+\begin{figure}
+    \centering
+    \includegraphics[]{figs/tracking_tcp_stack.pdf}
+    \caption{Structure of software components involved in snapshotting of TCP stack}
+    \label{fig:track_components}
+\end{figure}
+
+\subsection{Sockets naming}
+
+To use sockets an application should have a way of distinguishing between them.
+An application in a persistent environment expects that it will be able to use
+objects using the same identifiers before and after restart. This explains a
+need in a persistent socket handles for PTCP.
+
+Each new socket created with the Berkeley socket API has a unique identifier.
+This identifier is an integer number that corresponds to a socket file
+descriptor. In Genode these file descriptors are stored inside the libc. They
+are assigned to the files in the order of opening in a sequential manner.
+Neither libc no Berkeley sockets API have a way of expressing desired file
+descriptor when a socket is opened.
+
+To workaround this problem I created a proxying file descriptor mechanism. This
+mechanism is merely a map between a persistent file descriptor and a libc one.
+The persistent handles are saved together with socket metadata blocks used in a
+restoration phase. This allows to restore state of each socket and prepopulate
+the map with new libc file descriptors before returning control to an
+application. The drawback of this approach is that applications can not use
+Berkeley socket API with the persistent socket descriptors until the proxying
+mechanism is not integrated to the libc.
+
+\subsection{Snapshot consistency}
+
+Saving state of a TCP stack to persistent memory is not an atomic operation. It
+is not desirable to stop execution of the entire component until it is
+finished. That is why forming of snapshot structure and writing to a file is
+executed in a separate thread. However, this creates a problem of making a
+snapshot consistent. For example, while a socket metadata structure is being
+written to persistent storage the socket might receive a packet. The controller
+will intercept the packet and change the metadata structure accordingly. This
+modification would make the structure corrupted. 
+
+To avoid this problem I created a critical section inside a snapshotting
+function. When execution flow enters this section, it acquires the mutex that
+blocks all calls to PTCP VFS plugin and suspends the Nic proxy. The function
+suspends the Nic proxy via the Proxy control RPC interface. The Nic proxy 
+handles RPC requests and incoming packets in the different threads. That allows
+to suspend packet receiving thread until snapshot structure will be formed.
+When the process of forming is complete, PTCP calls an RPC method that resumes
+execution of the packet processing thread in the Nic proxy. Then it releases
+the PTCP VFS plugin mutex. 
+
+The incoming packets that arrived while Nic proxy was suspended are buffered.
+To avoid overflow of the buffer I tried to make critical section as short as
+possible. Due to this the writing of memory to the disk is not within the
+critical section. Instead, the critical section contains only copying values 
+that will be written to a thread-local storage. This storage is used solely by
+the snapshot thread and thus is not modified concurrently. After snapshot is 
+formed it is safely written to the persistent memory file. For now this
+persistent memory is just a file, but in principle it can be anything, even 
+a part of Phantom OS snapshot.
 
 \subsection{Snapshot location}
 
@@ -370,12 +431,14 @@ The goal of this paper is to design a persistent networking stack suitable for
 Phantom OS. Due to this, it is possible to include a snapshot of the TCP stack
 into the Phantom VM snapshot structure. However, I decided that a persistent
 network stack can be useful not only for the Phantom OS but also for other
-persistent systems. These systems can use other mechanisms for persistence. Due
-to this, I decided to make an abstract interface that has functions for saving
-and loading binary data from persistent memory.
+persistent systems. These systems be implemented entirely in Genode and can use
+other mechanisms for persistence. Due to this, I decided to make an abstract
+interface that has functions for saving and loading binary data from persistent
+memory.
 
 For simplicity, the only implementation of this service saves its state
 directly to the hard drive volume attached to VM. An implementation that saves
 and loads data using the Phantom snapshotting mechanism is currently in
 progress.
+
 
