@@ -1,0 +1,130 @@
+\chapter{Evaluation and Discussion}
+\label{chap:eval}
+
+This chapter begins with the brief description of achieved results. The second
+section discusses of how the requirements formulated in section
+\ref{sec:meth:req} were implemented in PTCP. Then the chapter discusses testing
+scenarios created to test if the implemented mechanism works. After that the
+results of tests are discussed. The end of the chapter contains future
+directions in a field of network stack of PoG port.
+
+\section{Results}
+\label{sec:eval:res}
+
+During this work I created a PTCP mechanism in form of Genode VFS plugin,
+Genode Nic proxying component and a shared library. The mechanism can be used
+to restore states of TCP sockets if execution of a program was interrupted by a
+shutdown. In particular, this can be useful for Phantom OS port to Genode OS
+framework. 
+
+The current limitations of the PTCP mechanism is that it is only works with
+TCP sockets in closed and listen states. However, this limitation is only due
+to the lack of time. In principle, nothing blocks addition of code for handling
+other states. With this limitation, however, PTCP is still useful with the PoG
+port, because its capabilities are the same as ones of the Phantom OS kernel
+TCP stack. The PoG port aims to replace the Phantom kernel with Genode
+components. Hence, PTCP can be a suitable replacement for the TCP stack
+previously implemented as a part of Phantom kernel. Furthermore, PTCP is easier
+mantained, because it is independent and its codebase is quite small.
+
+\section{Meeting the requirements}
+
+\subsection{Transparency for client applications}
+
+PTCP is not completely transparent for client applications. To use it, 
+application should use a PTCP client library and add function call that will
+initialize the library at component startup. This lack of transparency is a
+result of compromise between problem of creation of persistent socket names and
+unwillingness of modifying Genode libc. I do not want to modify libc because it
+belongs to a trusted computing base. Any change in it should be done with
+caution and should be verified. 
+
+If an application does not need the persistent sockets functionality and
+instead wants to use PTCP as a regular TCP stack then PTCP acts as any other
+TCP stack available in Genode. That is, PTCP VFS plugin is added as a backing
+plugin for socket directory and path to the directory is passed to libc.
+
+\subsection{Robustness to rollbacks}
+
+PTCP fails to properly process rollbacks. In case of unexpected shutdown
+packets that were received by PTCP but were not delivered to applications will
+be lost. However, the architecture including a proxying Nic component allows
+PTCP to replay the packets that were in reception queue when a host machine
+came down. However, in this case PTCP should somehow track what packets are 
+in a send queue and this seems to be challenging.
+
+\subsection{Usefullness}
+
+The usefullness requirement was satisfied by PTCP. For now the developed
+prototype already can serve as a replacement for Phantom OS TCP stack. I will
+not stop on this requirement in detail, as it already was discussed in the
+Section \ref{sec:eval:res}.
+
+\subsection{Compatibility with the existing protocols}
+
+This requirement, in essense was about using TCP or some other well-known
+protocol. This requirement holds in PTCP. The TCP stack uses TCP protocol and
+can be used by Genode components exactly as they use any other TCP stack.
+
+\section{Testing scenarios}
+
+I created two test cases that emulate behavior of a persistent system using 
+PTCP. These cases are quite simplistic and only designed to check correctness
+of work of the developed software.
+
+The first testcase checks that TCP sockets in various states are restored
+correctly. The program creates six TCP sockets. Two of these sockets remain in
+the closed state. The two of them are bound to local ports to be later used in
+listen() function. The rest two are bound to addresses and then their states
+set to the listen state. All sockets are bound to the different ports.
+
+After this initialization the test scenario remembers which socket has which
+persistent descriptor. Then the scenario saves the mapping to persistent memory
+and ensures that PTCP have made its snapshot. Then a restart is scheduled.
+After the restart the test case loads mapping between sockets and descriptors.
+At this point PTCP should have its state restored, because restoration takes
+place before passing control to client application. After the mapping is loaded
+the test case checks that each socket is in valid state. The checks consists of
+moving each socket to listen state with Berkeley socket API and ensuring that
+socket really listens by connecting to the machine from another machine in the
+same subnet. If any socket returns any error in process of verification or 
+initialization, the test case considered to be failed.
+
+The second test case is designed to check that PTCP can correctly process
+sending and receiving packets. This test case works similarly to the previous
+one -- it also consists of initialization and verification phases separated by
+a restart. The initialization part includes setup of a listening socket. When
+the socket is open, a remote machine establishes connection to the PTCP client
+application and expects to receive 100 packets with a certain payload. After
+connection establishment the server machine sends packets. It performs snapshot
+after each packet is sent. When it sends 50th packet, the server machine shuts
+restarts. After the restart the test case on the server reads number of sent
+packets and proceeds sending the payload starting from 51th packet. The point
+of this test is to check the work of the Nic proxy mechanism. The fact that
+the old server socket does not exists anymore should not be noticed by the
+client process. Unfortunately, for now this test always fails because the proxy
+was not implemented.
+
+\section{Future directions}
+
+PTCP only works with changing of state of only one machine. Therefore, the
+state of a connection can be restored only when the socket at the remote site
+exists. This limits a possible time when PTCP can restore sockets. In most
+cases the time that a host can be down is around of 30 seconds. This is quite
+small amount of time and. To make it larger PTCP should be a collaborative
+mechanism. Communicating PTCPs may employ exchange control messages, as
+proposed by \cite{rocks_racks}, for example by using a separate UDP socket or
+ICMP messages.
+
+Another issue that might be addressed is change of interface's IP address after
+restart. Throughout this paper, I discussed PTCP mechanism under the assumption
+that IP address does not changed. However, it is not always the case in the
+real world. In case of change of IP address the remote peer will not be able
+to consider newly created socket as a continuation of the previously existing
+one. One can implement a proxying NAT-like server similar to the Nic proxy
+discussed above. However, this server should live outside the persistent
+machine and have static address.
+
+% TODO restoring seqs is insecure
+% TODO Fd_proxy can't create multiple sockets at same time
+
