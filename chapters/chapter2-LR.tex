@@ -3,25 +3,30 @@
 \chaptermark{Second Chapter Heading}
 
 This chapter begins with an overview of the concept of persistence in general
-and orthogonal persistence in Section 1. Section 2 describes TCP, tries to
-establish requirements for a networking stack in persistent systems and
-discusses related works. The last section of this chapter describes Phantom OS,
-Genode OS framework and the current state of porting the former to the latter.
+and orthogonal persistence in particular in Section \ref{sec:lr:persistence}.
+The Section \ref{sec:lr:networking} describes what special networking needs
+do persistent systems have and then presents an overview of the TCP protocol,
+which will be useful in next chapters. The last section of this chapter
+briefly describes Phantom OS, Genode OS framework and the current state of
+porting the former to the latter.
 
 \section{Persistence}
+\label{sec:lr:persistence}
 \subsection{Persistence definitions}
 
 The concept of \textit{data persistence} was informally introduced in Section
 \ref{sec:intro-bg}. The formal definition of this concept is presented below.
+\begin{definition}
 The lifetime of a data is a time extent over which it can be used. This
 lifetime is commonly called \textit{persistence} \cite{atkinson1983ps}. 
+\end{definition}
 
 Atkinson \textit{et al.} \cite{atkinson1995orthogonally,atkinson1983ps} give a
 classification of application data by their persistence. This classification is
 presented in Table \ref{tab:data_lifetimes}. As it was said earlier, the
 support of levels 1-4 is usually provided by an operating system and a
 programming language. This is due to the fact that these data are stored at the
-main memory or lower memory levels.  On the other hand, to use levels 5-8
+main memory or lower memory levels. On the other hand, to use levels 5-8
 applications designers should rely on some external component, such as database
 or file system. 
 
@@ -129,25 +134,51 @@ snapshot, for example due to an unexpected power loss.
 % UDP, and create application-level protocols that will mitigate the problems
 % arising in lifetime of persistent applications.
 
+\subsection{Transmission control protocol}
+
 The most popular transport layer protocol -- TCP -- is designed to provide a 
 reliable packet delivery service. The reliability is achieved with periodic
-retransmissions and acknowledgements. When a remote peer does not acknowledge a
-packet TCP prescribes to retransmit it. The maximum number of retransmissions is
-not stated in the original TCP specification \cite{john1981transmission}.
-However, the specification received updates later, which prescribe to retransmit
-packets with exponentially increasing delay \cite{rfc6298} until the timeout of
-at least 100 seconds \cite{rfc1122}. This means, that the most TCP
-implementations will close a connection if their peer appears to be down for
-more than 100 seconds.
+retransmissions and acknowledgements. Each TCP packet is equipped with two
+numbers - SEQ and ACK. SEQ, or \textit{sequence number} is a number of payload
+bytes sent by the sender of segment before the current one. ACK, or \textit{
+acknowledgement number} stands for number of payload bytes the sender received.
+To enhance the security and error tolerance of the protocol initial SEQs are
+chosen randomly at the connection establishment time. To enable error-detection
+TCP segments carry checksum that comprises contents of the segment and
+so-called pseudo IP header \cite{tcp_ip_illustrated_vol2}. The checksum can be
+updated incrementally, without a recomputing it for a whole packet.
 
-The previous part of this section explains why persistent support systems should
-restore state of network connections in restoration phase when the execution was
-interrupted by a power loss. Several approaches were proposed to mitigate this
-issue. The first approach, proposed by Ekwall, Urb{\'a}n and Schiper
+When host receives a TCP segment, the host's TCP checks segment's SEQ number.
+If SEQ is equal to $N$ and the last previously acknowledged byte had number
+$N-1$ the segment is accepted and payload passed to user of the TCP. After the 
+payload is queued to be delivered to the user, the receiving TCP sends
+acknowledgement segment with ACK equal to $N$.
+
+TCP is a connection-oriented protocol. Before any data transmission happens,
+communicating peers need to establish connection to negotiate transmissions
+paramenters. These parameters include exchange of initial SEQs. The connections
+are established with a three-way handshake, that is, exchanging of three
+segments - two from client to server, and one in the opposite direction.
+
+TCP uses retransmissions and acknowledgements as follows. When a remote peer
+does not acknowledge a packet TCP prescribes to retransmit it. The maximum
+number of retransmissions is not stated in the original TCP specification
+\cite{john1981transmission}.  However, the specification received updates
+later, which prescribe to retransmit packets with exponentially increasing
+delay \cite{rfc6298} until the timeout of at least 100 seconds \cite{rfc1122}.
+This means, that some TCP implementations will close a connection if their
+peer appears to be down for more than 100 seconds.
+
+The closing of connection when host is temporarily offline is a good example of
+problem with traditional stateful protocols. The example highlights that
+persistent support systems should restore state of network connections in
+restoration phase when the execution was interrupted by a power loss. Several
+approaches were proposed to hide closing of connections from user applications.
+The first approach, proposed by Ekwall, Urb{\'a}n and Schiper
 \cite{ekwall2002robust}, is to create a session layer protocol that will behave
-similar to the original TCP specification with respect of timeouts. That is, the
-protocol will retransmit packets infinitely reopening underlying TCP connections
-as they get closed.
+similar to the original TCP specification with respect of timeouts. That is,
+the protocol will retransmit packets infinitely reopening underlying TCP
+connections as they get closed.
 
 The second approach was proposed by Zhang and Dao \cite{zhang1995persistent}.
 This article, as well as the previous one, proposes to use a session-layer
@@ -197,12 +228,12 @@ case when drivers are embedded in kernel error in driver can crash whole system.
 Implementation of drivers as parts of kernel also complicate development and
 delivery of the drivers.
 
-These are two reasons why it is desirable to replace Phantom kernel with a 
+These are two reasons why it is desirable to replace Phantom kernel with a
 microkernel. The port of Phantom OS to Genode OS framework is being developed
 right now. It is implemented as a Genode component running the PVM. This means,
-that network capabilities are provided by the Genode level of the PoG port. That
-is why I will concentrate my attention on development of a network stack working
-in Genode.
+that network capabilities are provided by the Genode level of the PoG port.
+That is why I will concentrate my attention on development of a network stack
+working in Genode.
 
 \subsection{Genode OS framework} 
 The Genode OS Framework \cite{genode_foundations} is a toolkit for creating 
@@ -216,14 +247,32 @@ include L4ka::Pistachio, Fiasco.OC, formally verified seL4 microkernel, and
 L4/Fiasco.  The framework also supports execution on a bare hardware on ARM and
 x86-64 ISA.
 
-Components provided by Genode usually fall into five categories: device drivers,
-resource multiplexers, protocol stacks, applications and runtime environments.
-Genode has a VFS with possibility of adding custom plugins to it. For instance,
-a part of process memory can be exposed as a file with the ram-fs plugin. TCP
-stacks are also implemented as VFS plugins that expose each socket as a set of
-files. 
+The Genode itself provides mechanisms for threading and synchonisation,
+inter-process communication (IPC), virtual memory, pluggable device drivers,
+sandboxing, and VFS. Processes in Genode are called \textit{components}. Genode
+components usually belong to one of the five categories: device drivers,
+resource multiplexers, protocol stacks, applications and runtime environments
+\cite{genode_foundations}. Genode's VFS with possibility of adding custom
+plugins to it. For instance, the ram-fs plugin can expose a part of process
+memory as a file. This is particularly convenient when one uses libc that has
+API that is mostly file-oriented. TCP/IP stacks are also implemented as VFS
+plugins that represent each socket as a set of files. VFS plugins are merely
+shared libraries that are loaded by VFS at runtime. Genode applications are not
+linked with VFS plugins.
 
-Genode's IPC mostly consists of a blocking remote procedure calls (RPC). The TCP
-stacks use the Network interface card (Nic) RPC interface as an input. VFS
-plugins are not persistent. Therefore, I need to implement saving and restoring
-of state of a TCP stack before it can be used by PVM.  
+Genode's IPC mostly consists of a blocking remote procedure calls (RPC). To use
+an RPC object provided by a server component, a client component should have a
+\textit{capability} to call it. A capability is a special reference to an RPC
+object which is backed by kernel. Possession of capability is enough to use an
+object that it references to. Capabilities are typed with RPC interface they
+provide. Genode components have a capability quotas - maximum number of
+capabilities they can own.
+
+Genode TCP stacks use the Network interface card (Nic) RPC interface as an
+input and output. That is, TCP stacks submit and receive packets via these
+interface. The Nic interface is implemented by a regular userspace component
+and therefore its implementation can be changed on a per-component basis.
+
+Genode VFS plugins and Genode components in general are not persistent. TCP
+stacks lose their state after a power loss. Therefore, I need to implement
+saving and restoring of state of a TCP stack before it can be used by PVM.
