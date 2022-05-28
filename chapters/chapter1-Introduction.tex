@@ -4,32 +4,36 @@
 \label{sec:intro-bg}
 
 Today, almost any enterprise application operates on data. A part of these data
-often should be \textit{persistent}, that is, should outlive the process that
-created it. In this definition \textit{a process} is not an operating system 
-process, but instead some abstract operation that creates data. 
+often should be \textit{persistent}, that is, it should outlive the process
+that created it. In this definition \textit{a process} is not an operating
+system process, but instead a process is an abstract operation that creates
+data. 
 
 The division between persistent and non-persistent data is not dichotomic.
 Several degrees of persistence exist -- from temporary values during expression
 evaluations to long-stored records in a database. For example, when a customer
 uses a bank card to purchase goods, the process is the withdrawal of money from
-their bank account. This process creates a record about the withdrawal that can
-be seen later in a bank app. In the case of expression evaluation, the process
-is an execution of a CPU instruction. 
+the customer's bank account. This process creates a record about the withdrawal
+that can be seen later in a bank app. In case of expression evaluation, the
+process is an execution of a CPU instruction. This process creates a data that
+is stored in CPU register.
 
 This range of data persistence closely resembles the memory hierarchy of modern
 computers. Such similarity is for a reason: more persistent data are stored in
-slower and energy-independent upper levels of memory. The presence of the
-memory hierarchy brings the need for moving portions of data to lower memory
-levels when a program needs to access the data. On the other hand, the limited
-size of low memory levels forces programmers to move data that is no longer
-needed to the higher levels to make space for new data.
+upper levels of memory. These memory levels are often energy-independent and
+slower than lower ones. The presence of the memory hierarchy brings the need
+for moving portions of data to lower memory levels when a program needs to
+access a certain portion of data. On the other hand, the limited size of low
+memory levels forces programmers to move data that is no longer needed to the
+higher levels to make space for new data.
 
-Modern operating systems manage moving data between the main memory and
-registers automatically, without the intervention from developers of
-applications for those systems. However, when an application needs to access
-data from the secondary storage, it should read and load data to the main
-memory by itself. Writing a program code for loading and saving data from and to
-secondary storage is a burden for developers of that applications.
+Modern operating systems and programming lanuages manage moving data between
+the main memory and registers automatically, without the intervention from
+application developers. However, when an application needs to access data from
+a secondary storage, it should read and load data to the main memory by itself.
+Writing a boilerplate program code for loading and saving data from and to
+secondary storage adds more complexity to programs. Thus, it is a burden for
+developers of that applications.
 
 To remedy this management of moving data between memory layers, Atkinson and
 Morrison \cite{atkinson1995orthogonally} propose to use persistent support
@@ -41,8 +45,9 @@ where all data virtually have the same persistence.
 \label{sec:int:phantom}
 
 The idea of persistent support systems was developed later with changing focus
-to operating systems \cite{landau1992checkpoint,dearle1994grasshopper}. The
-most modern of them up to date is Phantom OS. This system consists of a
+to operating systems
+\cite{landau1992checkpoint,dearle1994grasshopper,atkinson2000review}.
+The most modern of them up to date is Phantom OS. This system consists of a
 stateless kernel and a Phantom Virtual Machine (PVM). PVM hosts processes,
 which execution states persist across restarts of the host machine. Persistence
 is achieved with periodic snapshotting. In the context of Phantom OS, a
@@ -53,51 +58,66 @@ Even though Phantom OS is a working persistent support system, there is still a
 room for improvement. Currently, Phantom OS does not restore the state of the
 Transmission Control Protocol (TCP) stack. The operating system only handles
 sockets in the LISTEN state. If a socket was in this state when the snapshot
-was taken, the system will reopen it on boot and bind to the same address.
-Sockets in other states will become invalid. Any attempt to use these sockets
-will result in an error. The application that tries to use such socket will
-receive this error and will be responsible for its handling. Usually, that
-handling implies reestablishing a connection with a remote peer and restarting
-data transmission from the very beginning.
+was taken, the system will reopen it on boot, bind to the same address and
+start listening on it. Sockets in other states will become invalid. Any
+attempt to use these sockets will result in an error. The application that
+tries to use such socket will receive this error and will be responsible for
+its handling. Usually, that handling implies reestablishing a connection with a
+remote peer and restarting data transmission from the very beginning.
 
 Because of the presence of these errors, existence in a persistent environment
 is not completely transparent for Phantom OS applications. Moreover, the common
 way of handling these errors, which was described above, results in inefficient
-network use, especially when power is off for a short period of time.
+network use, especially when power is off for a short period of time. 
 
 \section{Problem statement}
 
-Recently, Phantom OS was ported to the Genode OS framework. The PVM was ported
-as a userspace Genode component, and all PVM syscalls are implemented as
-functions provided by other Genode parts. In particular, the network stack was
-implemented in the Genode as a Virtual File System (VFS) plugin. Due to this
-fact and the flexibility of the Genode VFS, changing implementation of the
-networking stack became easier in comparison to Phantom OS before this port. My
-hypothesis is that it is possible to develop an enhancement to the Phantom
-networking stack entirely in the Genode part of the port.
+Recently, a group of researchers from Innopolis University started porting
+Phantom OS to the Genode OS framework. The PVM in this port is implemented as a
+userspace Genode process, and all the Phantom kernel syscalls are implemented
+as functions provided by the Genode layer of the port. In particular, the
+network stack was implemented in the Genode as a Virtual File System (VFS)
+plugin. Due to this fact and the flexibility of the Genode VFS, changing
+implementation of the networking stack became easier in comparison to Phantom
+OS before this port. 
+
+The functionality of restoration of sockets state was not in the scope of this
+port. Thus, even the inherent Phantom OS ability to restore listening sockets
+was lost in this port. My hypothesis is that it is possible to develop an
+enhancement to the networking stack of Phantom OS port. This enhancement should
+reside entirely in the Genode part of the port. The enhancement should provide
+client applications with an abstraction of a persistent socket, i.e. socket
+that can be used after any number of restarts of a host machine. To simplify
+the problem I will implement the mechanism working only for short-duration
+shutdowns that gets unnoticed by the remote side. However, I will consider
+a cooperative mechanisms that could allow handling longer shutdowns.
 
 The original document describing TCP \cite{john1981transmission} suggests using
-a Finite State Machine (FSM) to implement the protocol. Most implementations of
-the protocol, including the one used in Phantom-over-Genode (PoG), use this FSM
-technique. The theoretical challenge behind implementation of the enhancement
-described above is the integration of an external state machine into the
-Phantom persistence model. In this context, “external” means that the code of
-the state machine is not running as managed code inside PVM. The first aim of
-this paper is to develop a methodology for integrating such state machines into
-Phantom OS.  
+one Finite State Machine (FSM) per socket to implement the protocol. Most
+implementations of the protocol, including the one used in Phantom-over-Genode
+(PoG) port, use this FSM technique. The theoretical challenge behind an
+implementation of the enhancement described above is the integration of an
+external state machine into the Phantom persistence model. In this context,
+“external” means that the code of the state machine is not running as managed
+code inside PVM. Thus, the first aim of this paper is to develop a methodology
+for integrating such state machines into Phantom OS. 
 
 The second aim of this paper is to enhance PoG TCP stack to achieve two goals.
-The first is to reduce the number of errors that should be handled by
+The first goal is to reduce the number of errors that should be handled by
 applications supervised by the PVM. This means that as many errors as possible
 should be either prevented or handled at the Genode layer of the OS. The second
 goal is to make the network utilization more efficient. This means avoiding
 extra TCP transmissions, if they are not necessary.
 
-The rest of this thesis is structured as follows:
-Chapter \ref{chap:lr} contains a detailed description of persistence concept in
-and a review of related work. Chapter \ref{chap:meth} describes implementation
-details of the PoG port, approaches that were tried during the implementation
-and reasons why some of them were discarded in favor of others. Chapter 
-\ref{chap:eval} contains description of achieved results, experiments to
-evaluate them and a future directions for networking in persistent systems.
+The rest of this thesis is structured as follows: Chapter \ref{chap:lr}
+contains a detailed description of the persistence concept, brief overview of
+Phantom OS, the Genode framework and TCP, and a review of related work in
+creation of persistent networking stacks. Chapter \ref{chap:meth} establishes
+requirements for the implemented software and discusses theoretical approaches
+that can be used to implement the software. Chapter \ref{chap:impl} discusses
+relevant implementation details of the PoG port, approaches that were tried
+during the implementation, and reasons why some of them were discarded in favor
+of the others. Chapter \ref{chap:eval} contains a description of the achieved
+results, description of experiments to evaluate them and future directions.
+Chapter \ref{chap:conc} contains a brief summary of this paper.
 
