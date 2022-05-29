@@ -15,8 +15,8 @@ evaluations to long-stored records in a database. For example, when a customer
 uses a bank card to purchase goods, the process is the withdrawal of money from
 the customer's bank account. This process creates a record about the withdrawal
 that can be seen later in a bank app. In case of expression evaluation, the
-process is an execution of a CPU instruction. This process creates a data that
-is stored in CPU register.
+process is an execution of a CPU instruction. This process creates data:
+instruction result that is stored in CPU register.
 
 This range of data persistence closely resembles the memory hierarchy of modern
 computers. Such similarity is for a reason: more persistent data are stored in
@@ -25,15 +25,15 @@ slower than lower ones. The presence of the memory hierarchy brings the need
 for moving portions of data to lower memory levels when a program needs to
 access a certain portion of data. On the other hand, the limited size of low
 memory levels forces programmers to move data that is no longer needed to the
-higher levels to make space for new data.
+higher levels to free space for new data.
 
-Modern operating systems and programming lanuages manage moving data between
+Modern operating systems and programming languages manage moving data between
 the main memory and registers automatically, without the intervention from
 application developers. However, when an application needs to access data from
 a secondary storage, it should read and load data to the main memory by itself.
 Writing a boilerplate program code for loading and saving data from and to
 secondary storage adds more complexity to programs. Thus, it is a burden for
-developers of that applications.
+developers of those applications.
 
 To remedy this management of moving data between memory layers, Atkinson and
 Morrison \cite{atkinson1995orthogonally} propose to use persistent support
@@ -46,13 +46,18 @@ where all data virtually have the same persistence.
 
 The idea of persistent support systems was developed later with changing focus
 to operating systems
-\cite{landau1992checkpoint,dearle1994grasshopper,atkinson2000review}.
-The most modern of them up to date is Phantom OS. This system consists of a
-stateless kernel and a Phantom Virtual Machine (PVM). PVM hosts processes,
-which execution states persist across restarts of the host machine. Persistence
-is achieved with periodic snapshotting. In the context of Phantom OS, a
-snapshot is a memory dump of the PVM memory space. The system uses the latest
-snapshot as a recovery point on booting.
+\cite{landau1992checkpoint,dearle1994grasshopper,atkinson2000review}. These
+systems have a notable property -- all data have the same persistence, and
+their degree of persistence is high enough to outlive restarts of a system.
+This means that the state of running programs is the same before and after
+restarts.
+
+The most modern persistent OS up to date is Phantom OS. This operating system
+consists of a stateless kernel and a Phantom Virtual Machine (PVM). PVM hosts
+processes, which execution states persist across restarts of the host machine.
+Persistence is achieved with periodic snapshotting. In the context of Phantom
+OS, a snapshot is a memory dump of the PVM memory space. The system uses the
+latest snapshot as a recovery point on booting.
 
 Even though Phantom OS is a working persistent support system, there is still a
 room for improvement. Currently, Phantom OS does not restore the state of the
@@ -61,14 +66,14 @@ sockets in the LISTEN state. If a socket was in this state when the snapshot
 was taken, the system will reopen it on boot, bind to the same address and
 start listening on it. Sockets in other states will become invalid. Any
 attempt to use these sockets will result in an error. The application that
-tries to use such socket will receive this error and will be responsible for
+tries to use such a socket will receive this error and will be responsible for
 its handling. Usually, that handling implies reestablishing a connection with a
 remote peer and restarting data transmission from the very beginning.
 
 Because of the presence of these errors, existence in a persistent environment
 is not completely transparent for Phantom OS applications. Moreover, the common
 way of handling these errors, which was described above, results in inefficient
-network use, especially when power is off for a short period of time. 
+network use, especially when power is off for a short period of time.
 
 \section{Problem statement}
 
@@ -83,17 +88,18 @@ OS before this port.
 
 The functionality of restoration of sockets state was not in the scope of this
 port. Thus, even the inherent Phantom OS ability to restore listening sockets
-was lost in this port. My hypothesis is that it is possible to develop an
-enhancement to the networking stack of Phantom OS port. This enhancement should
-reside entirely in the Genode part of the port. The enhancement should provide
-client applications with an abstraction of a persistent socket, i.e. socket
-that can be used after any number of restarts of a host machine. To simplify
-the problem I will implement the mechanism working only for short-duration
-shutdowns that gets unnoticed by the remote side. However, I will consider
-a cooperative mechanisms that could allow handling longer shutdowns.
+was lost in the porting process. My hypothesis is that it is possible to
+develop an enhancement to the networking stack of Phantom OS port. This
+enhancement should reside entirely in the Genode part. The enhancement should
+provide client applications with an abstraction of a persistent socket, i.e.
+socket that can be used after any number of restarts of a host machine. To
+simplify the problem I will implement the mechanism working only for
+short-duration shutdowns that get unnoticed by the remote side. However, in
+the theoretical part of this thesis I will consider cooperative mechanisms
+that could allow handling longer shutdowns.
 
 The original document describing TCP \cite{john1981transmission} suggests using
-one Finite State Machine (FSM) per socket to implement the protocol. Most
+a single Finite State Machine (FSM) per socket to implement the protocol. Most
 implementations of the protocol, including the one used in Phantom-over-Genode
 (PoG) port, use this FSM technique. The theoretical challenge behind an
 implementation of the enhancement described above is the integration of an
@@ -110,14 +116,15 @@ goal is to make the network utilization more efficient. This means avoiding
 extra TCP transmissions, if they are not necessary.
 
 The rest of this thesis is structured as follows: Chapter \ref{chap:lr}
-contains a detailed description of the persistence concept, brief overview of
-Phantom OS, the Genode framework and TCP, and a review of related work in
-creation of persistent networking stacks. Chapter \ref{chap:meth} establishes
-requirements for the implemented software and discusses theoretical approaches
-that can be used to implement the software. Chapter \ref{chap:impl} discusses
-relevant implementation details of the PoG port, approaches that were tried
-during the implementation, and reasons why some of them were discarded in favor
-of the others. Chapter \ref{chap:eval} contains a description of the achieved
-results, description of experiments to evaluate them and future directions.
-Chapter \ref{chap:conc} contains a brief summary of this paper.
+contains a detailed description of the persistence concept, brief overview of 
+relevant details of TCP, general description of Phantom OS, the Genode OS
+framework  and a review of related work in creation of persistent networking
+stacks. Chapter \ref{chap:meth} establishes requirements for the implemented
+software and discusses approaches that in theory could be used to implement it.
+Chapter \ref{chap:impl} discusses relevant implementation details of the PoG
+port, approaches that were tried during the implementation, and reasons
+why some of them were discarded in favor of the others. Chapter \ref{chap:eval}
+contains a description of the achieved results, description of experiments to
+evaluate them and future directions.  Chapter \ref{chap:conc} contains a brief
+summary of this paper.
 
