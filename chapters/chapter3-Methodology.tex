@@ -79,7 +79,7 @@ snapshot. However, this will either dramatically increase the number of
 retransmissions in a network, which will result in reduced network performance
 or it will require doing snapshots very often. In such a case a snapshot should
 be performed each 50ms to avoid extra network congestion at all. However, in
-PoG a snapshotring runs for around 10 seconds. This approach is not acceptable
+PoG a snapshotting runs for around 10 seconds. This approach is not acceptable
 with such a long snapshotting process.  
 
 The second solution is to keep in persistent memory a buffer that will store
@@ -93,7 +93,7 @@ the receiving host has done a snapshot. ICMP messages or some similar stateless
 network protocol could be useful to notify the broker about the end of the
 snapshot process.
 
-\subsection {Usefullness}
+\subsection {Usefulness}
 
 Phantom OS network stack is already capable of restoring sockets in CLOSED and
 LISTEN states. For a Genode implementation of a persistent TCP to be useful it
@@ -129,10 +129,11 @@ only thing a user would need is to change the configuration of the init Genode
 component.
 
 \subsection{Application of requirements for the implemented software}
+
 Implementation of a TCP stack that will satisfy all the requirements listed
 above is not in the scope of this work. They are listed as requirements for an
 ideal network stack for a persistent OS. Instead, I aim to solve a much
-siumpler problem.
+simpler problem.
 
 When a local host goes down, the remote TCP still maintains a connection for a
 certain amount of time, retransmitting the last unacknowledged segment as
@@ -140,8 +141,8 @@ described at Section \ref{lr:tcp}. If a host is shut down for a short amount of
 time, TCP will repair itself. This is valid if the state of local TCP will not
 be changed due to the restart. But Genode components do not keep their state
 after restart. Therefore, to allow TCP reliable delivery service to properly
-work with a restarted host we need to restore state of TCP stack on a host that
-goes down. The practical part of this thesis will be dedicated to
+work with a restarted host system needs to restore the state of TCP stack on a
+host that goes down. The practical part of this thesis will be dedicated to
 implementation of a mechanism to restore locally-stored state of TCP.
 
 \section{On persisting of finite state machines}
@@ -162,7 +163,7 @@ this approach is that an operating system should provide mechanisms to allow
 such manipulations with address spaces.
 
 The second approach is to directly access a current state of the FSM. Usually
-most operating systems components, including networkd stacks, are implemented
+most operating systems components, including network stacks, are implemented
 on C or C++. Usually FSM in these languages are implemented as structs or
 classes holding current state as an value of an enumerable type. If it is
 possible to access these structures directly, simple saving and loading them
